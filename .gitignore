@@ -1,0 +1,64 @@
+# ---- Python ----
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+develop-eggs/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ---- 虚拟环境 ----
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# ---- PyInstaller ----
+*.spec
+# 注意：如果你手动修改过 .spec 文件并想保留，请删除上面这行
+
+# ---- 缓存 / 测试 ----
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+
+# ---- 本地配置文件 (如果你临时覆盖，建议用这个) ----
+config.local.json
+*.log
+
+# ---- 素材文件 (如果存放了原画/大图) ----
+# 视情况取消注释，或者使用 Git LFS
+# assets/**/*.psd
+# assets/**/*.kra
+# assets/**/*.png
+
+# ---- 编辑器 / IDE ----
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# ---- 操作系统 ----
+.DS_Store
+Thumbs.db
+desktop.ini
