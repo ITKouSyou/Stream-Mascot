@@ -12,6 +12,7 @@ from audio_utils import start_mic, stop_mic, get_volume, MIC_ENABLED
 from renderer import load_custom_character, draw_background_and_cat, draw_mouse_hand, draw_keyboard_hand
 # 导入新加的模块
 from effects import ParticleSystem, ContextMenu
+from stt_utils import SpeechRecognizer
 
 def main():
     global next_blink, blink_until, current_hand_x, current_hand_y, is_talking, last_talk_time
@@ -59,6 +60,44 @@ def main():
     
     is_click_through = False
     toggle_click_through_flag = False
+
+    current_expression = "normal"
+    expression_end_time = 0.0
+    particle_sys = ParticleSystem()
+    active_menu = None
+    
+    # ======== 新增：语音关键词映射 ========
+    EMOTION_KEYWORDS = {
+        "heart": ["谢谢", "哇", "爱你", "喜欢", "么么哒", "牛逼"],
+        "angry": ["靠", "无语", "生气", "烦", "傻逼", "操", "滚"],
+        "cry": ["呜呜", "哭", "委屈", "可怜", "难过"],
+        "surprised": ["卧槽", "居然", "竟然", "妈呀", "真的假的"],
+        "speechless": ["服了", "醉了", "搞笑", "离谱"]
+    }
+
+    def on_speech_recognized(text):
+        nonlocal current_expression, expression_end_time
+        # 移除空格（Vosk 有时会加空格）
+        text = text.replace(" ", "")
+        
+        for emotion, keywords in EMOTION_KEYWORDS.items():
+            for kw in keywords:
+                if kw in text:
+                    current_expression = emotion
+                    expression_end_time = time.time() + 3.0 # 触发后持续 3 秒
+                    
+                    # 触发粒子特效
+                    if emotion == "heart":
+                        particle_sys.emit(300, 100, count=15, color=(255, 100, 150), ptype="heart")
+                    elif emotion == "angry":
+                        particle_sys.emit(300, 100, count=5, color=(255, 50, 50), ptype="star")
+                    elif emotion == "cry":
+                        particle_sys.emit(300, 100, count=8, color=(100, 200, 255), ptype="star")
+                    break
+
+    # 启动语音识别
+    stt = SpeechRecognizer(callback=on_speech_recognized)
+    # ======================================
 
     def on_hotkey_press(key):
         nonlocal toggle_click_through_flag
@@ -202,6 +241,7 @@ def main():
     stop_listeners()
     stop_mic(mic_stream)
     hotkey_listener.stop()
+    stt.stop()
     pygame.quit()
 
 if __name__ == "__main__":
