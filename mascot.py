@@ -296,6 +296,7 @@ def main():
     font = pygame.font.Font(None, 20) 
     
     screen = pygame.display.set_mode((WIDTH, HEIGHT), pygame.NOFRAME)
+    pygame.display.set_caption("Stream-Mascot")
     set_window_transparent()
 
     char_image = load_custom_character(CHARACTER_PATH)
