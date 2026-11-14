@@ -13,14 +13,14 @@ from config import (
 keys_data = []
 keys_data.append({"char": "SPACE", "rect": pygame.Rect(410, 250, 130, 24)})
 
-for i, char in enumerate("ZXCVBNM"):
+# 从左到右反向排列，让 1, Q, A, Z 在最右侧
+for i, char in enumerate("MNBVCXZ"): # 原 ZXCVBNM 反转
     keys_data.append({"char": char, "rect": pygame.Rect(360 + i*26, 282, 22, 24)})
-for i, char in enumerate("ASDFGHJKL"):
+for i, char in enumerate("LKJHGFDSA"): # 原 ASDFGHJKL 反转
     keys_data.append({"char": char, "rect": pygame.Rect(346 + i*26, 314, 22, 24)})
-for i, char in enumerate("QWERTYUIOP"):
+for i, char in enumerate("POIUYTREWQ"): # 原 QWERTYUIOP 反转
     keys_data.append({"char": char, "rect": pygame.Rect(332 + i*26, 346, 22, 24)})
-# 新增：数字按键排 (倒置键盘的最外侧一排)
-for i, char in enumerate("1234567890"):
+for i, char in enumerate("0987654321"): # 原 1234567890 反转
     keys_data.append({"char": char, "rect": pygame.Rect(318 + i*26, 378, 22, 24)})
 
 def load_custom_character(path):
@@ -50,7 +50,7 @@ def load_custom_character(path):
         print(f"加载角色失败: {e}。回退到默认白猫。")
         return None
 
-def draw_background_and_cat(surface, is_blinking, is_talking, mouth_open, char_image):
+def draw_background_and_cat(surface, is_blinking, is_talking, mouth_open, char_image, expression="normal"):
     if char_image:
         y_offset = -4 if is_talking else 0
         rect = char_image.get_rect(center=(300, 130 + y_offset))
@@ -87,37 +87,58 @@ def draw_background_and_cat(surface, is_blinking, is_talking, mouth_open, char_i
         outline_pts.append((420, 260))
         outline_pts.append((180, 260))
 
-        # 绘制底色和粗黑边
+        # 绘制底色和粗黑边 (这就是刚才消失的部分)
         pygame.draw.polygon(surface, COLOR_CAT, outline_pts)
         pygame.draw.lines(surface, COLOR_OUTLINE, True, outline_pts, 4)
         
-        # ---------------- 2. 绘制五官 ----------------
-        # 眼睛
-        if is_blinking and not mouth_open:
-            pygame.draw.line(surface, COLOR_OUTLINE, (240, 135), (260, 135), 4)
-            pygame.draw.line(surface, COLOR_OUTLINE, (340, 135), (360, 135), 4)
+        # ---------------- 2. 绘制五官 (包含表情切换) ----------------
+        eye_color = COLOR_OUTLINE
+        
+        # 眼睛逻辑
+        if expression == "heart":
+            # 爱心眼
+            pygame.draw.polygon(surface, (255, 80, 120), [(240,130),(245,125),(250,130),(245,140)])
+            pygame.draw.polygon(surface, (255, 80, 120), [(250,130),(255,125),(260,130),(255,140)])
+            pygame.draw.polygon(surface, (255, 80, 120), [(340,130),(345,125),(350,130),(345,140)])
+            pygame.draw.polygon(surface, (255, 80, 120), [(350,130),(355,125),(360,130),(355,140)])
+        elif expression == "angry":
+            # 生气眼 (> <)
+            pygame.draw.line(surface, eye_color, (245, 135), (255, 125), 4)
+            pygame.draw.line(surface, eye_color, (245, 125), (255, 135), 4)
+            pygame.draw.line(surface, eye_color, (345, 135), (355, 125), 4)
+            pygame.draw.line(surface, eye_color, (345, 125), (355, 135), 4)
+        elif is_blinking and not mouth_open:
+            # 眨眼
+            pygame.draw.line(surface, eye_color, (240, 135), (260, 135), 4)
+            pygame.draw.line(surface, eye_color, (340, 135), (360, 135), 4)
         elif is_talking:
-            pygame.draw.arc(surface, COLOR_OUTLINE, (230, 120, 30, 20), 3.14, 0, 4)
-            pygame.draw.arc(surface, COLOR_OUTLINE, (340, 120, 30, 20), 3.14, 0, 4)
+            # 笑眼
+            pygame.draw.arc(surface, eye_color, (230, 120, 30, 20), 3.14, 0, 4)
+            pygame.draw.arc(surface, eye_color, (340, 120, 30, 20), 3.14, 0, 4)
         else:
-            pygame.draw.circle(surface, COLOR_OUTLINE, (250, 135), 7)
-            pygame.draw.circle(surface, COLOR_OUTLINE, (350, 135), 7)
+            # 正常圆眼
+            pygame.draw.circle(surface, eye_color, (250, 135), 7)
+            pygame.draw.circle(surface, eye_color, (350, 135), 7)
             
-        # 嘴巴
-        if mouth_open:
+        # 嘴巴逻辑
+        if expression == "angry":
+            # 生气的平直嘴
+            pygame.draw.line(surface, eye_color, (290, 148), (310, 148), 4)
+        elif mouth_open:
+            # 说话张嘴
             pygame.draw.ellipse(surface, COLOR_OUTLINE, (285, 135, 30, 22))
             pygame.draw.ellipse(surface, (200, 80, 100), (288, 138, 24, 16))
             pygame.draw.ellipse(surface, COLOR_PAW, (293, 145, 14, 7))
         else:
-            # 用多段线画出完美的连贯 w 嘴
+            # 完美比例 w 嘴
             mouth_pts = [
-                (285, 140),  # 左上起点
-                (292, 148),  # 左下凹点
-                (300, 140),  # 中间凸点
-                (308, 148),  # 右下凹点
-                (315, 140)   # 右上终点
+                (285, 140),
+                (292, 148),
+                (300, 140),
+                (308, 148),
+                (315, 140)
             ]
-            pygame.draw.lines(surface, COLOR_OUTLINE, False, mouth_pts, 4)
+            pygame.draw.lines(surface, eye_color, False, mouth_pts, 4)
 
     # 桌面 (把下半部分切平，形成趴在桌子上的效果)
     pygame.draw.rect(surface, COLOR_DESK, (0, 240, 600, 160))
@@ -203,11 +224,12 @@ def draw_keyboard_hand(surface, is_typing_all, active_chars_all, font):
         text_rect = text_surf.get_rect(center=rect.center)
         surface.blit(text_surf, text_rect)
 
-    # 默认待机位置：靠右脸颊，搭在桌子边缘 (y=240 附近)
+    # 默认待机位置：靠右脸颊，搭在桌子边缘
     target_x, target_y = 380, 255 
     
     if is_typing and active_chars:
-        target_char = list(active_chars)[0]
+        # 【修复核心】：对多键按下的情况进行排序，固定选第一个，防止手在多个键之间疯狂瞬移闪烁
+        target_char = sorted(list(active_chars))[0]
         for k in keys_data:
             if k["char"] == target_char:
                 target_x = k["rect"].centerx
