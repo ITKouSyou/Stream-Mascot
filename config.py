@@ -4,12 +4,13 @@ import json
 CONFIG_FILE = "config.json"
 
 DEFAULT_CONFIG = {
-    "width": 600, "height": 400, "fps": 60,
+    "scale": 1.0, "fps": 60,
     "character_path": "", "character_width": 180,
     "mic": {
         "enabled": True,
-        "threshold": 0.04,
-        "release_time": 0.15
+        "threshold": 0.15,
+        "release_time": 0.2,
+        "mouth_speed": 10
     },
     "colors": {
         "bg": [255, 0, 255], "desk": [245, 245, 245], "cat": [255, 255, 255],
@@ -38,8 +39,15 @@ def load_config():
 
 CFG = load_config()
 
-WIDTH = CFG["width"]
-HEIGHT = CFG["height"]
+# 逻辑基础尺寸
+BASE_WIDTH = 600
+BASE_HEIGHT = 400
+
+# 缩放比例与真实窗口尺寸
+SCALE = CFG.get("scale", 1.0)
+WIDTH = int(BASE_WIDTH * SCALE)
+HEIGHT = int(BASE_HEIGHT * SCALE)
+
 FPS = CFG["fps"]
 CHARACTER_PATH = CFG["character_path"]
 CHARACTER_WIDTH = CFG["character_width"]

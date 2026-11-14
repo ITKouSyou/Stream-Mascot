@@ -48,7 +48,6 @@ def load_custom_character(path):
 
 def draw_background_and_cat(surface, is_blinking, is_talking, mouth_open, char_image):
     if char_image:
-        # 自定义图片：根据是否正在说话，做上下浮动
         y_offset = -4 if is_talking else 0
         rect = char_image.get_rect(center=(WIDTH//2, 130 + y_offset))
         surface.blit(char_image, rect)
@@ -63,21 +62,25 @@ def draw_background_and_cat(surface, is_blinking, is_talking, mouth_open, char_i
         pygame.draw.circle(surface, COLOR_CAT, (WIDTH//2, 120), 120)
         pygame.draw.circle(surface, COLOR_OUTLINE, (WIDTH//2, 120), 120, 4)
         
-        # 眼睛（说话且嘴巴张开时不眨眼，显得更有精神）
+        # 眼睛
         if is_blinking and not mouth_open:
             pygame.draw.line(surface, COLOR_OUTLINE, (250, 120), (265, 120), 4)
             pygame.draw.line(surface, COLOR_OUTLINE, (335, 120), (350, 120), 4)
+        elif is_talking:
+            pygame.draw.arc(surface, COLOR_OUTLINE, (240, 105, 30, 20), 3.14, 0, 4)
+            pygame.draw.arc(surface, COLOR_OUTLINE, (330, 105, 30, 20), 3.14, 0, 4)
         else:
             pygame.draw.circle(surface, COLOR_OUTLINE, (255, 120), 8)
             pygame.draw.circle(surface, COLOR_OUTLINE, (345, 120), 8)
             
-        # 嘴巴逻辑
+        # 嘴巴
         if mouth_open:
-            pygame.draw.ellipse(surface, COLOR_OUTLINE, (285, 120, 30, 22))
-            pygame.draw.ellipse(surface, COLOR_PAW, (288, 123, 24, 16))
+            pygame.draw.ellipse(surface, COLOR_OUTLINE, (280, 118, 40, 30))
+            pygame.draw.ellipse(surface, (200, 80, 100), (284, 122, 32, 22))
+            pygame.draw.ellipse(surface, COLOR_PAW, (290, 134, 20, 8))
         else:
-            pygame.draw.arc(surface, COLOR_OUTLINE, (285, 120, 15, 15), 3.14, 0, 3)
-            pygame.draw.arc(surface, COLOR_OUTLINE, (300, 120, 15, 15), 3.14, 0, 3)
+            pygame.draw.arc(surface, COLOR_OUTLINE, (285, 120, 15, 15), 3.14, 0, 4)
+            pygame.draw.arc(surface, COLOR_OUTLINE, (300, 120, 15, 15), 3.14, 0, 4)
 
     # 桌面
     pygame.draw.rect(surface, COLOR_DESK, (0, 240, WIDTH, 400-240))
