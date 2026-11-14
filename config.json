@@ -5,7 +5,13 @@
     
     "character_path": "",
     "character_width": 180,
-  
+
+    "mic": {
+      "enabled": true,
+      "threshold": 0.05,
+      "release_time": 0.15
+    },
+
     "colors": {
       "bg": [0, 0, 0],
       "desk": [245, 245, 245],

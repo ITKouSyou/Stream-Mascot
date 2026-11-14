@@ -12,6 +12,15 @@ import urllib.request
 import io
 import os
 import json
+import numpy as np
+
+# 尝试导入 sounddevice，防止用户未安装导致崩溃
+try:
+    import sounddevice as sd
+    HAS_AUDIO = True
+except ImportError:
+    HAS_AUDIO = False
+    print("警告: 未安装 sounddevice 或 numpy，麦克风功能将被禁用。")
 
 # ---------------- 配置加载 ----------------
 CONFIG_FILE = "config.json"
@@ -19,6 +28,11 @@ CONFIG_FILE = "config.json"
 DEFAULT_CONFIG = {
     "width": 600, "height": 400, "fps": 60,
     "character_path": "", "character_width": 180,
+    "mic": {
+        "enabled": True,
+        "threshold": 0.04,
+        "release_time": 0.15
+    },
     "colors": {
         "bg": [0, 0, 0], "desk": [245, 245, 245], "cat": [255, 255, 255],
         "outline": [15, 15, 15], "paw": [255, 160, 170],
@@ -34,6 +48,7 @@ def load_config():
                 user_cfg = json.load(f)
                 cfg = {**DEFAULT_CONFIG, **user_cfg}
                 cfg["colors"] = {**DEFAULT_CONFIG["colors"], **user_cfg.get("colors", {})}
+                cfg["mic"] = {**DEFAULT_CONFIG["mic"], **user_cfg.get("mic", {})}
                 return cfg
         except Exception as e:
             print(f"读取配置文件失败: {e}，将使用默认配置。")
@@ -50,6 +65,11 @@ HEIGHT = CFG["height"]
 FPS = CFG["fps"]
 CHARACTER_PATH = CFG["character_path"]
 CHARACTER_WIDTH = CFG["character_width"]
+
+# 麦克风配置
+MIC_ENABLED = CFG["mic"]["enabled"] and HAS_AUDIO
+MIC_THRESHOLD = CFG["mic"]["threshold"]
+MIC_RELEASE = CFG["mic"]["release_time"]
 
 COLOR_BG = tuple(CFG["colors"]["bg"])
 COLOR_DESK = tuple(CFG["colors"]["desk"])
@@ -77,9 +97,35 @@ window_start_pos = (0, 0)
 next_blink = time.time() + random.uniform(2, 5)
 blink_until = 0.0
 
-# 鼠标平滑追踪
 current_hand_x = 115
 current_hand_y = 297
+
+# 麦克风音量状态
+current_volume = 0.0
+is_talking = False
+last_talk_time = 0.0
+
+# ---------------- 麦克风监听器 ----------------
+def audio_callback(indata, frames, time_info, status):
+    global current_volume
+    if status:
+        print(f"音频流状态: {status}")
+    # 计算音量 RMS（均方根）
+    volume = np.linalg.norm(indata) / np.sqrt(len(indata))
+    # 平滑处理，避免瞬间突变
+    current_volume = current_volume * 0.7 + volume * 0.3
+
+def start_mic():
+    if not MIC_ENABLED:
+        return None
+    try:
+        stream = sd.InputStream(callback=audio_callback, channels=1, samplerate=44100)
+        stream.start()
+        print("麦克风监听已启动")
+        return stream
+    except Exception as e:
+        print(f"麦克风启动失败: {e}")
+        return None
 
 # ---------------- 监听器 ----------------
 def on_press(key):
@@ -148,7 +194,6 @@ def get_active_chars():
 def load_custom_character(path):
     if not path:
         return None
-        
     try:
         if path.startswith("http"):
             req = urllib.request.Request(path, headers={'User-Agent': 'Mozilla/5.0'})
@@ -162,7 +207,6 @@ def load_custom_character(path):
             image = pygame.image.load(path)
             
         image = image.convert_alpha()
-        
         if image.get_at((0, 0)).a == 255:  
             bg_color = image.get_at((0, 0))
             image.set_colorkey(bg_color)
@@ -170,26 +214,26 @@ def load_custom_character(path):
         ratio = CHARACTER_WIDTH / image.get_width()
         target_height = int(image.get_height() * ratio)
         image = pygame.transform.smoothscale(image, (CHARACTER_WIDTH, target_height))
-        
         return image
     except Exception as e:
         print(f"加载角色失败: {e}。回退到默认白猫。")
         return None
 
 # ---------------- 绘制函数 ----------------
-def draw_background_and_cat(surface, is_blinking, char_image):
+def draw_background_and_cat(surface, is_blinking, is_talking, char_image):
+    # 1. 绘制角色
     if char_image:
-        rect = char_image.get_rect(center=(WIDTH//2, 130))
+        # 如果自定义图片，说话时上下稍微跳动
+        y_offset = -4 if is_talking else 0
+        rect = char_image.get_rect(center=(WIDTH//2, 130 + y_offset))
         surface.blit(char_image, rect)
     else:
-        # 猫耳朵
+        # 默认手绘白猫
         pygame.draw.polygon(surface, COLOR_CAT, [(160, 70), (190, -10), (250, 60)])
         pygame.draw.lines(surface, COLOR_OUTLINE, False, [(160, 70), (190, -10), (250, 60)], 4)
-        
         pygame.draw.polygon(surface, COLOR_CAT, [(350, 60), (410, -10), (440, 70)])
         pygame.draw.lines(surface, COLOR_OUTLINE, False, [(350, 60), (410, -10), (440, 70)], 4)
         
-        # 猫脸
         pygame.draw.circle(surface, COLOR_CAT, (WIDTH//2, 120), 120)
         pygame.draw.circle(surface, COLOR_OUTLINE, (WIDTH//2, 120), 120, 4)
         
@@ -201,8 +245,12 @@ def draw_background_and_cat(surface, is_blinking, char_image):
             pygame.draw.circle(surface, COLOR_OUTLINE, (255, 120), 8)
             pygame.draw.circle(surface, COLOR_OUTLINE, (345, 120), 8)
             
-        pygame.draw.arc(surface, COLOR_OUTLINE, (285, 120, 15, 15), 3.14, 0, 3)
-        pygame.draw.arc(surface, COLOR_OUTLINE, (300, 120, 15, 15), 3.14, 0, 3)
+        # 嘴巴逻辑：说话时张嘴（O型），不说话时（W型）
+        if is_talking:
+            pygame.draw.ellipse(surface, COLOR_OUTLINE, (290, 125, 20, 15))
+        else:
+            pygame.draw.arc(surface, COLOR_OUTLINE, (285, 120, 15, 15), 3.14, 0, 3)
+            pygame.draw.arc(surface, COLOR_OUTLINE, (300, 120, 15, 15), 3.14, 0, 3)
 
     # 桌面
     pygame.draw.rect(surface, COLOR_DESK, (0, 240, WIDTH, HEIGHT-240))
@@ -212,7 +260,6 @@ def draw_mouse_hand(surface, mx, my, is_pressed):
     pygame.draw.ellipse(surface, COLOR_MOUSEPAD, (20, 245, 190, 105))
     pygame.draw.ellipse(surface, COLOR_OUTLINE, (20, 245, 190, 105), 2)
 
-    # 放大鼠标本体 (宽 40, 高 60)
     m_rect = pygame.Rect(mx - 20, my - 30, 40, 60)
     pygame.draw.ellipse(surface, COLOR_MOUSE, m_rect)
     pygame.draw.ellipse(surface, COLOR_OUTLINE, m_rect, 3)
@@ -221,16 +268,13 @@ def draw_mouse_hand(surface, mx, my, is_pressed):
     if is_pressed:
         pygame.draw.ellipse(surface, COLOR_MOUSE_HL, (m_rect.right-19, m_rect.bottom-31, 18, 28))
 
-    # 鼠标手 (稍微缩小，并往上提，让鼠标下半部分露出来)
     paw_cy = my - 15
     if is_pressed:
         paw_cy += 4 
         
-    # 手背
     pygame.draw.circle(surface, COLOR_CAT, (mx, paw_cy), 14)
     pygame.draw.circle(surface, COLOR_OUTLINE, (mx, paw_cy), 14, 3)
     
-    # 小手指朝下
     for i in range(3): 
         px = mx - 9 + i * 9
         py = paw_cy + 10
@@ -254,7 +298,6 @@ def draw_keyboard_hand(surface, is_typing, active_chars, font):
         text_rect = text_surf.get_rect(center=rect.center)
         surface.blit(text_surf, text_rect)
 
-    # 键盘手默认位置
     target_x, target_y = 450, 295 
     
     if is_typing and active_chars:
@@ -269,7 +312,6 @@ def draw_keyboard_hand(surface, is_typing, active_chars, font):
     cx, cy = target_x, target_y + jitter
     
     if is_typing:
-        # 按下时：手背
         pygame.draw.ellipse(surface, COLOR_CAT, (cx - 20, cy - 15, 40, 40))
         pygame.draw.ellipse(surface, COLOR_OUTLINE, (cx - 20, cy - 15, 40, 40), 4)
         for i in range(3):
@@ -277,7 +319,6 @@ def draw_keyboard_hand(surface, is_typing, active_chars, font):
             pygame.draw.circle(surface, COLOR_CAT, (px, cy + 12), 7)
             pygame.draw.circle(surface, COLOR_OUTLINE, (px, cy + 12), 7, 3)
     else:
-        # 松开时：肉垫
         pygame.draw.ellipse(surface, COLOR_CAT, (cx - 22, cy - 22, 44, 44))
         pygame.draw.ellipse(surface, COLOR_OUTLINE, (cx - 22, cy - 22, 44, 44), 4)
         pygame.draw.ellipse(surface, COLOR_PAW, (cx - 9, cy - 4, 18, 22))
@@ -290,6 +331,7 @@ def main():
     global is_dragging, drag_start_global, window_start_pos
     global next_blink, blink_until
     global current_hand_x, current_hand_y
+    global is_talking, last_talk_time
     
     pygame.init()
     pygame.font.init()
@@ -300,6 +342,7 @@ def main():
     set_window_transparent()
 
     char_image = load_custom_character(CHARACTER_PATH)
+    mic_stream = start_mic()
 
     clock = pygame.time.Clock()
     running = True
@@ -325,31 +368,37 @@ def main():
             dy = cur_y - drag_start_global[1]
             move_window(window_start_pos[0] + dx, window_start_pos[1] + dy)
 
-        # --- 鼠标按屏幕比例追踪映射 ---
+        # --- 鼠标追踪 ---
         cur_x, cur_y = win32api.GetCursorPos()
         screen_w = win32api.GetSystemMetrics(0)
         screen_h = win32api.GetSystemMetrics(1)
 
-        # 计算目标位置
         pct_x = (cur_x / screen_w) - 0.5
         pct_y = (cur_y / screen_h) - 0.5
 
-        # 鼠标垫活动范围 (x: 55 ~ 175, y: 270 ~ 325)
         target_mx = 115 - (pct_x * 120)
         target_my = 297 - (pct_y * 55)
 
         target_mx = max(55, min(175, target_mx))
         target_my = max(270, min(325, target_my))
 
-        # 加入平滑缓动 (0.2 的插值系数，数值越小越有延迟感)
         current_hand_x += (target_mx - current_hand_x) * 0.2
         current_hand_y += (target_my - current_hand_y) * 0.2
 
+        # --- 眨眼逻辑 ---
         now = time.time()
         if now > next_blink:
             blink_until = now + 0.15
             next_blink = now + random.uniform(2, 5)
         is_blinking = now < blink_until
+
+        # --- 麦克风逻辑 ---
+        if MIC_ENABLED:
+            if current_volume > MIC_THRESHOLD:
+                is_talking = True
+                last_talk_time = now
+            elif now - last_talk_time > MIC_RELEASE:
+                is_talking = False
 
         with state_lock:
             is_typing = len(pressed_keys) > 0
@@ -359,7 +408,7 @@ def main():
 
         screen.fill(COLOR_BG)
 
-        draw_background_and_cat(screen, is_blinking, char_image)
+        draw_background_and_cat(screen, is_blinking, is_talking, char_image)
         draw_mouse_hand(screen, current_hand_x, current_hand_y, is_clicking)
         draw_keyboard_hand(screen, is_typing, active_chars, font)
 
@@ -368,6 +417,9 @@ def main():
 
     kb_listener.stop()
     ms_listener.stop()
+    if mic_stream:
+        mic_stream.stop()
+        mic_stream.close()
     pygame.quit()
 
 if __name__ == "__main__":
