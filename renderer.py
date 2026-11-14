@@ -46,8 +46,9 @@ def load_custom_character(path):
         print(f"加载角色失败: {e}。回退到默认白猫。")
         return None
 
-def draw_background_and_cat(surface, is_blinking, is_talking, char_image):
+def draw_background_and_cat(surface, is_blinking, is_talking, mouth_open, char_image):
     if char_image:
+        # 自定义图片：根据是否正在说话，做上下浮动
         y_offset = -4 if is_talking else 0
         rect = char_image.get_rect(center=(WIDTH//2, 130 + y_offset))
         surface.blit(char_image, rect)
@@ -62,16 +63,16 @@ def draw_background_and_cat(surface, is_blinking, is_talking, char_image):
         pygame.draw.circle(surface, COLOR_CAT, (WIDTH//2, 120), 120)
         pygame.draw.circle(surface, COLOR_OUTLINE, (WIDTH//2, 120), 120, 4)
         
-        # 眼睛（说话时不眨眼）
-        if is_blinking and not is_talking:
+        # 眼睛（说话且嘴巴张开时不眨眼，显得更有精神）
+        if is_blinking and not mouth_open:
             pygame.draw.line(surface, COLOR_OUTLINE, (250, 120), (265, 120), 4)
             pygame.draw.line(surface, COLOR_OUTLINE, (335, 120), (350, 120), 4)
         else:
             pygame.draw.circle(surface, COLOR_OUTLINE, (255, 120), 8)
             pygame.draw.circle(surface, COLOR_OUTLINE, (345, 120), 8)
             
-        # 嘴巴
-        if is_talking:
+        # 嘴巴逻辑
+        if mouth_open:
             pygame.draw.ellipse(surface, COLOR_OUTLINE, (285, 120, 30, 22))
             pygame.draw.ellipse(surface, COLOR_PAW, (288, 123, 24, 16))
         else:

@@ -37,8 +37,11 @@ def main():
     
     is_talking = False
     last_talk_time = 0.0
+    mouth_open = False
     mic_threshold = CFG["mic"]["threshold"]
     mic_release = CFG["mic"]["release_time"]
+    # 读取新增的嘴型速度配置，如果没有就默认 10
+    mic_speed = CFG["mic"].get("mouth_speed", 10) 
 
     clock = pygame.time.Clock()
     running = True
@@ -95,8 +98,19 @@ def main():
             if get_volume() > mic_threshold:
                 is_talking = True
                 last_talk_time = now
-            elif now - last_talk_time > mic_release:
+            
+            # 如果还在说话的延迟时间内
+            if now - last_talk_time < mic_release:
+                is_talking = True
+                # 核心：用时间周期来模拟嘴巴一开一合 (基于现在的微秒时间戳)
+                # 这样只要在说话，嘴巴就会像开枪一样快速张合
+                mouth_open = (int(now * mic_speed) % 2 == 0)
+            else:
                 is_talking = False
+                mouth_open = False
+        else:
+            is_talking = False
+            mouth_open = False
 
         # --- 获取外设状态 ---
         is_typing, is_clicking = get_input_state()
@@ -105,7 +119,8 @@ def main():
         # --- 渲染 ---
         screen.fill(CFG["colors"]["bg"])
 
-        draw_background_and_cat(screen, is_blinking, is_talking, char_image)
+        # 注意这里多传了一个 mouth_open 参数
+        draw_background_and_cat(screen, is_blinking, is_talking, mouth_open, char_image)
         draw_mouse_hand(screen, current_hand_x, current_hand_y, is_clicking)
         draw_keyboard_hand(screen, is_typing, active_chars, font)
 
