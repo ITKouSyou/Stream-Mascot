@@ -86,28 +86,24 @@ def draw_background_and_cat(surface, is_blinking, is_talking, mouth_open, char_i
 
         # 1. 爱心眼 (♥ω♥)
         if expression == "heart":
-            # 画爱心
             for cx in [250, 350]:
                 pygame.draw.circle(surface, pink, (cx - 4, 130), 6)
                 pygame.draw.circle(surface, pink, (cx + 4, 130), 6)
                 pygame.draw.polygon(surface, pink, [(cx - 10, 133), (cx + 10, 133), (cx, 145)])
-            # 画开心的 w 嘴
             pygame.draw.lines(surface, eye_color, False, [(285, 140), (292, 148), (300, 140), (308, 148), (315, 140)], 4)
             
         # 2. 生气 (╬▔皿▔)
         elif expression == "angry":
-            pygame.draw.line(surface, eye_color, (240, 125), (260, 138), 5) # 左倒八字
-            pygame.draw.line(surface, eye_color, (360, 125), (340, 138), 5) # 右倒八字
-            pygame.draw.line(surface, eye_color, (290, 150), (310, 150), 4) # 一条平直的嘴
+            pygame.draw.line(surface, eye_color, (240, 125), (260, 138), 5)
+            pygame.draw.line(surface, eye_color, (360, 125), (340, 138), 5)
+            pygame.draw.line(surface, eye_color, (290, 150), (310, 150), 4)
             
         # 3. 哭泣 (ಥ_ಥ)
         elif expression == "cry":
-            pygame.draw.arc(surface, eye_color, (240, 125, 20, 15), 3.14, 0, 3) # 八字眼
+            pygame.draw.arc(surface, eye_color, (240, 125, 20, 15), 3.14, 0, 3)
             pygame.draw.arc(surface, eye_color, (340, 125, 20, 15), 3.14, 0, 3)
-            # 眼泪
             pygame.draw.ellipse(surface, (100, 200, 255), (245, 140, 6, 12))
             pygame.draw.ellipse(surface, (100, 200, 255), (350, 140, 6, 12))
-            # 波浪嘴
             pygame.draw.arc(surface, eye_color, (290, 145, 10, 10), 3.14, 0, 3)
             pygame.draw.arc(surface, eye_color, (300, 145, 10, 10), 0, 3.14, 3)
             
@@ -115,24 +111,31 @@ def draw_background_and_cat(surface, is_blinking, is_talking, mouth_open, char_i
         elif expression == "surprised":
             pygame.draw.circle(surface, eye_color, (250, 135), 10, 4)
             pygame.draw.circle(surface, eye_color, (350, 135), 10, 4)
-            pygame.draw.circle(surface, eye_color, (300, 150), 7, 3) # 圆圆的小嘴巴
+            pygame.draw.circle(surface, eye_color, (300, 150), 7, 3)
             
         # 5. 无语 (￣_￣)
         elif expression == "speechless":
             pygame.draw.line(surface, eye_color, (240, 135), (260, 135), 4)
             pygame.draw.line(surface, eye_color, (340, 135), (360, 135), 4)
-            pygame.draw.line(surface, eye_color, (290, 145), (310, 145), 3) # 极简平嘴
-            # 汗滴
+            pygame.draw.line(surface, eye_color, (290, 145), (310, 145), 3)
             pygame.draw.ellipse(surface, (100, 200, 255), (370, 110, 6, 12))
 
         # 6. 正常状态 / 说话 / 眨眼
         else:
             if is_talking:
+                # 说话时，眼睛变弯弯眼
                 pygame.draw.arc(surface, eye_color, (230, 120, 30, 20), 3.14, 0, 4)
                 pygame.draw.arc(surface, eye_color, (340, 120, 30, 20), 3.14, 0, 4)
-                pygame.draw.ellipse(surface, eye_color, (285, 135, 30, 22))
-                pygame.draw.ellipse(surface, (200, 80, 100), (288, 138, 24, 16))
-                pygame.draw.ellipse(surface, COLOR_PAW, (293, 145, 14, 7))
+                
+                # 【修复核心】：用 mouth_open 控制嘴巴开合
+                if mouth_open:
+                    # 张嘴
+                    pygame.draw.ellipse(surface, eye_color, (285, 135, 30, 22))
+                    pygame.draw.ellipse(surface, (200, 80, 100), (288, 138, 24, 16))
+                    pygame.draw.ellipse(surface, COLOR_PAW, (293, 145, 14, 7))
+                else:
+                    # 闭嘴
+                    pygame.draw.lines(surface, eye_color, False, [(285, 140), (292, 148), (300, 140), (308, 148), (315, 140)], 4)
             elif is_blinking:
                 pygame.draw.line(surface, eye_color, (240, 135), (260, 135), 4)
                 pygame.draw.line(surface, eye_color, (340, 135), (360, 135), 4)

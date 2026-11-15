@@ -9,7 +9,7 @@
     "enabled": true,
     "threshold": 0.15,
     "release_time": 0.2,
-    "mouth_speed": 5
+    "mouth_speed": 10
   },
 
   "colors": {
