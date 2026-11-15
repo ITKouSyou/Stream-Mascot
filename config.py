@@ -12,6 +12,13 @@ DEFAULT_CONFIG = {
         "release_time": 0.2,
         "mouth_speed": 10
     },
+    "keywords": {
+        "heart": ["谢谢", "哇", "爱你", "喜欢", "么么哒", "牛逼"],
+        "angry": ["靠", "无语", "生气", "烦", "傻逼", "操", "滚"],
+        "cry": ["呜呜", "哭", "委屈", "可怜", "难过"],
+        "surprised": ["卧槽", "居然", "竟然", "妈呀", "真的假的"],
+        "speechless": ["服了", "醉了", "搞笑", "离谱"]
+    },
     "colors": {
         "bg": [255, 0, 255], "desk": [245, 245, 245], "cat": [255, 255, 255],
         "outline": [15, 15, 15], "paw": [255, 160, 170],
@@ -28,6 +35,7 @@ def load_config():
                 cfg = {**DEFAULT_CONFIG, **user_cfg}
                 cfg["colors"] = {**DEFAULT_CONFIG["colors"], **user_cfg.get("colors", {})}
                 cfg["mic"] = {**DEFAULT_CONFIG["mic"], **user_cfg.get("mic", {})}
+                cfg["keywords"] = {**DEFAULT_CONFIG["keywords"], **user_cfg.get("keywords", {})}
                 return cfg
         except Exception as e:
             print(f"读取配置文件失败: {e}，将使用默认配置。")
@@ -39,15 +47,11 @@ def load_config():
 
 CFG = load_config()
 
-# 逻辑基础尺寸
 BASE_WIDTH = 600
 BASE_HEIGHT = 400
-
-# 缩放比例与真实窗口尺寸
 SCALE = CFG.get("scale", 1.0)
 WIDTH = int(BASE_WIDTH * SCALE)
 HEIGHT = int(BASE_HEIGHT * SCALE)
-
 FPS = CFG["fps"]
 CHARACTER_PATH = CFG["character_path"]
 CHARACTER_WIDTH = CFG["character_width"]
@@ -57,11 +61,9 @@ COLOR_DESK = tuple(CFG["colors"]["desk"])
 COLOR_CAT = tuple(CFG["colors"]["cat"])
 COLOR_OUTLINE = tuple(CFG["colors"]["outline"])
 COLOR_PAW = tuple(CFG["colors"]["paw"])
-
 COLOR_MOUSEPAD = tuple(CFG["colors"]["mousepad"])
 COLOR_MOUSE = tuple(CFG["colors"]["mouse"])
 COLOR_MOUSE_HL = tuple(CFG["colors"]["mouse_hl"])
-
 COLOR_KEY_BASE = tuple(CFG["colors"]["key_base"])
 COLOR_KEY = tuple(CFG["colors"]["key"])
 COLOR_KEY_HL = tuple(CFG["colors"]["key_hl"])

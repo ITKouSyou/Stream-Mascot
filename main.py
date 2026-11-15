@@ -1,6 +1,5 @@
 import ctypes
 try:
-    # 告诉 Windows 该程序不缩放，按真实像素渲染
     ctypes.windll.shcore.SetProcessDpiAwareness(1)
 except Exception:
     pass
@@ -10,8 +9,10 @@ import random
 import win32api
 import pygame
 import os
+import sys
 import numpy as np
-import config  # 动态导入模块以支持实时修改缩放
+import threading
+import config
 from pynput import keyboard
 
 from config import BASE_WIDTH, BASE_HEIGHT, SCALE, FPS, CHARACTER_PATH, CFG
@@ -21,29 +22,26 @@ from audio_utils import start_mic, stop_mic, get_volume, MIC_ENABLED
 from renderer import load_custom_character, draw_background_and_cat, draw_mouse_hand, draw_keyboard_hand
 from effects import ParticleSystem, ContextMenu
 from stt_utils import SpeechRecognizer
+from settings_ui import SettingsWindow
 
 def remove_scale_artifacts(surface):
-    """去除平滑缩放产生的边缘杂色（粉边/紫边），保证Win32透明抠图干净"""
-    # 获取像素数组
     arr = pygame.surfarray.pixels3d(surface)
-    # 找到紫红色过渡带 (R>180, B>180, G<100)
     mask = (arr[:, :, 0] > 180) & (arr[:, :, 2] > 180) & (arr[:, :, 1] < 100)
-    # 强制刷回纯品红
     arr[mask] = [255, 0, 255]
     del arr
 
 def main():
-    global next_blink, blink_until, current_hand_x, current_hand_y, is_talking, last_talk_time
+    global reload_requested
+    reload_requested = False
     
+    def trigger_reload():
+        global reload_requested
+        reload_requested = True
+
     pygame.init()
     pygame.font.init()
     
-    # 尝试加载支持中文的系统字体
-    font_paths = [
-        "C:/Windows/Fonts/msyh.ttc",    # 微软雅黑
-        "C:/Windows/Fonts/simhei.ttf",  # 黑体
-        "C:/Windows/Fonts/simsun.ttc"   # 宋体
-    ]
+    font_paths = ["C:/Windows/Fonts/msyh.ttc", "C:/Windows/Fonts/simhei.ttf", "C:/Windows/Fonts/simsun.ttc"]
     font = None
     for path in font_paths:
         if os.path.exists(path):
@@ -52,12 +50,9 @@ def main():
     if not font:
         font = pygame.font.Font(None, 20)
     
-    # 实际显示的窗口
     screen = pygame.display.set_mode((config.WIDTH, config.HEIGHT), pygame.NOFRAME)
     pygame.display.set_caption("Stream-Mascot")
     set_window_transparent()
-
-    # 离屏画布 (固定基础大小 600x400)
     canvas = pygame.Surface((BASE_WIDTH, BASE_HEIGHT))
 
     char_image = load_custom_character(CHARACTER_PATH)
@@ -81,31 +76,42 @@ def main():
     is_click_through = False
     toggle_click_through_flag = False
 
-    # ======== 语音关键词映射 ========
-    EMOTION_KEYWORDS = {
-        "heart": ["谢谢", "哇", "爱你", "喜欢", "么么哒", "牛逼"],
-        "angry": ["靠", "无语", "生气", "烦", "傻逼", "操", "滚"],
-        "cry": ["呜呜", "哭", "委屈", "可怜", "难过"],
-        "surprised": ["卧槽", "居然", "竟然", "妈呀", "真的假的"],
-        "speechless": ["服了", "醉了", "搞笑", "离谱"]
-    }
-
-    def on_speech_recognized(text):
+    def trigger_expression(emotion):
         nonlocal current_expression, expression_end_time
-        text = text.replace(" ", "")
+        current_expression = emotion
         
-        for emotion, keywords in EMOTION_KEYWORDS.items():
+        if emotion == "heart":
+            particle_sys.emit(300, 100, count=15, color=(255, 100, 150), ptype="heart")
+            expression_end_time = time.time() + 3.0
+        elif emotion == "angry":
+            particle_sys.emit(300, 100, count=5, color=(255, 50, 50), ptype="star")
+            expression_end_time = time.time() + 3.0
+        elif emotion == "cry":
+            particle_sys.emit(300, 100, count=8, color=(100, 200, 255), ptype="star")
+            expression_end_time = time.time() + 3.0
+        elif emotion in ["surprised", "speechless"]:
+            expression_end_time = time.time() + 3.0
+        else:
+            expression_end_time = 0
+
+    def open_settings():
+        nonlocal active_menu
+        active_menu = None
+        def run_ui():
+            app = SettingsWindow(on_save_callback=trigger_reload, on_interact_callback=trigger_expression)
+            app.show()
+        threading.Thread(target=run_ui, daemon=True).start()
+
+    # 从 config 中读取最新的词库
+    def on_speech_recognized(text):
+        text = text.replace(" ", "")
+        # 动态获取，确保用户在设置里改了词库能立刻反映（如果是重新读取了 config 的话）
+        # 但为了性能，我们直接读取模块中的 CFG 字典
+        keywords_dict = CFG.get("keywords", {})
+        for emotion, keywords in keywords_dict.items():
             for kw in keywords:
                 if kw in text:
-                    current_expression = emotion
-                    expression_end_time = time.time() + 3.0
-                    
-                    if emotion == "heart":
-                        particle_sys.emit(300, 100, count=15, color=(255, 100, 150), ptype="heart")
-                    elif emotion == "angry":
-                        particle_sys.emit(300, 100, count=5, color=(255, 50, 50), ptype="star")
-                    elif emotion == "cry":
-                        particle_sys.emit(300, 100, count=8, color=(100, 200, 255), ptype="star")
+                    trigger_expression(emotion)
                     break
 
     stt = SpeechRecognizer(callback=on_speech_recognized)
@@ -123,10 +129,12 @@ def main():
     running = True
 
     while running:
+        if reload_requested:
+            running = False
+            break
+
         wx, wy = get_window_pos()
         cur_x, cur_y = win32api.GetCursorPos()
-        
-        # 获取当前的缩放比例
         current_scale = config.SCALE
         
         for event in pygame.event.get():
@@ -136,45 +144,31 @@ def main():
                 running = False
             
             elif event.type == pygame.MOUSEBUTTONDOWN:
-                # 【核心】将鼠标事件坐标映射回 600x400 的逻辑画布坐标
                 logical_pos = (event.pos[0] / current_scale, event.pos[1] / current_scale)
                 
-                if event.button == 3 and not is_click_through: # 右键
+                if event.button == 3 and not is_click_through:
                     if active_menu:
                         active_menu = None
                     else:
-                        mx = min(logical_pos[0], BASE_WIDTH - 120)
-                        my = min(logical_pos[1], BASE_HEIGHT - 200)
-                        # 扩展右键菜单：增加缩放选项
+                        mx = min(logical_pos[0], BASE_WIDTH - 150)
+                        my = min(logical_pos[1], BASE_HEIGHT - 150)
                         options = [
-                            ("比个心", "heart"), ("生气了", "angry"), ("恢复原状", "normal"),
-                            ("缩放 0.8x", "scale_0.8"), ("缩放 1.0x", "scale_1.0"), ("缩放 1.5x", "scale_1.5")
+                            ("设置与互动", "settings"),
+                            ("重新加载桌宠", "reload"),
+                            ("退出程序", "quit")
                         ]
-                        active_menu = ContextMenu(mx, my, options)
+                        active_menu = ContextMenu(mx, my, options, font)
                         
-                elif event.button == 1: # 左键
+                elif event.button == 1:
                     if active_menu:
                         action = active_menu.check_click(logical_pos)
                         if action:
-                            if action.startswith("scale_"):
-                                # 动态调整缩放
-                                new_scale = float(action.split("_")[1])
-                                config.SCALE = new_scale
-                                config.WIDTH = int(BASE_WIDTH * new_scale)
-                                config.HEIGHT = int(BASE_HEIGHT * new_scale)
-                                # 重建窗口并应用透明
-                                screen = pygame.display.set_mode((config.WIDTH, config.HEIGHT), pygame.NOFRAME)
-                                set_window_transparent()
-                            else:
-                                # 表情
-                                current_expression = action
-                                if action == "heart":
-                                    particle_sys.emit(300, 100, count=15, color=(255, 100, 150), ptype="heart")
-                                    expression_end_time = time.time() + 3.0
-                                elif action == "angry":
-                                    expression_end_time = time.time() + 3.0
-                                else:
-                                    expression_end_time = 0
+                            if action == "settings":
+                                open_settings()
+                            elif action == "reload":
+                                trigger_reload()
+                            elif action == "quit":
+                                running = False
                         active_menu = None
                     else:
                         if not is_click_through:
@@ -202,7 +196,6 @@ def main():
             dy = cur_y - drag_start_global[1]
             move_window(window_start_pos[0] + dx, window_start_pos[1] + dy)
 
-        # --- 鼠标追踪 (逻辑坐标) ---
         screen_w = win32api.GetSystemMetrics(0)
         screen_h = win32api.GetSystemMetrics(1)
         pct_x = (cur_x / screen_w) - 0.5
@@ -214,7 +207,6 @@ def main():
         current_hand_x += (target_mx - current_hand_x) * 0.2
         current_hand_y += (target_my - current_hand_y) * 0.2
 
-        # --- 时间与表情逻辑 ---
         now = time.time()
         if current_expression != "normal" and now > expression_end_time:
             current_expression = "normal"
@@ -224,7 +216,6 @@ def main():
             next_blink = now + random.uniform(2, 5)
         is_blinking = now < blink_until
 
-        # --- 麦克风逻辑 ---
         if MIC_ENABLED:
             if get_volume() > CFG["mic"]["threshold"]:
                 is_talking = True
@@ -236,14 +227,12 @@ def main():
                 is_talking = False
                 mouth_open = False
 
-        # --- 外设状态 ---
         is_typing, is_clicking = get_input_state()
         active_chars = get_active_chars()
         
         if is_typing and random.random() < 0.1:
             particle_sys.emit(450, 300, count=1, color=(100, 200, 255), ptype="star")
 
-        # ======== 渲染到逻辑画布 ========
         canvas.fill((255, 0, 255))
 
         draw_background_and_cat(canvas, is_blinking, is_talking, mouth_open, char_image, current_expression)
@@ -254,11 +243,8 @@ def main():
         if active_menu:
             active_menu.draw(canvas, font)
 
-        # ======== 动态缩放并处理边缘杂色 ========
         if config.SCALE != 1.0:
-            # 1. 平滑缩放
             scaled_canvas = pygame.transform.smoothscale(canvas, (config.WIDTH, config.HEIGHT))
-            # 2. 强制清理半透明产生的粉边
             remove_scale_artifacts(scaled_canvas)
             screen.blit(scaled_canvas, (0, 0))
         else:
@@ -272,6 +258,10 @@ def main():
     hotkey_listener.stop()
     stt.stop()
     pygame.quit()
+
+    if reload_requested:
+        print("\n[系统] 正在重新加载桌宠...")
+        os.execl(sys.executable, sys.executable, *sys.argv)
 
 if __name__ == "__main__":
     main()
