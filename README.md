@@ -1,5 +1,9 @@
 # Stream-Mascot (直播桌宠)
 
+![Version](https://img.shields.io/badge/version-1.0.0-blue)
+![Python](https://img.shields.io/badge/python-3.9%2B-blue)
+![License](https://img.shields.io/badge/license-MIT-green)
+
 一个可以悬浮在桌面、实时响应键鼠与**麦克风语音**、支持**多套方案切换**、可自定义角色与互动表情的二次元桌宠/直播虚拟挂件。
 
 纯 Python + Pygame 实现，**无需任何外部图片素材（开箱即用）**。内置 Bongo Cat 风格渲染、全局输入监听、麦克风互动、离线语音识别、多套角色方案管理以及专属粒子特效系统，是你直播或写代码时的完美陪伴。

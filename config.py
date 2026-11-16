@@ -1,6 +1,8 @@
 import os
 import json
-import shutil
+
+# 项目版本号
+__version__ = "1.0.0"
 
 CONFIG_FILE = "config.json"
 CUSTOM_DIR = "custom_assets"
@@ -31,7 +33,9 @@ DEFAULT_CONFIG = {
         "默认白猫": DEFAULT_PROFILE
     },
     "global": {
-        "scale": 1.0, "fps": 60,
+        "scale": 1.0, 
+        "fps": 60,
+        "always_on_top": True,  # 新增：默认开启窗口置顶
         "mic": {
             "enabled": True,
             "threshold": 0.15,
@@ -69,6 +73,7 @@ def load_config():
                     "global": {
                         "scale": user_cfg.get("scale", 1.0),
                         "fps": user_cfg.get("fps", 60),
+                        "always_on_top": True,
                         "mic": user_cfg.get("mic", DEFAULT_CONFIG["global"]["mic"]),
                         "colors": user_cfg.get("colors", DEFAULT_CONFIG["global"]["colors"])
                     }
@@ -77,6 +82,10 @@ def load_config():
                     json.dump(new_cfg, f, indent=2, ensure_ascii=False)
                 return new_cfg
             
+            # 兼容某些字段缺失的情况
+            if "always_on_top" not in user_cfg["global"]:
+                user_cfg["global"]["always_on_top"] = True
+                
             return user_cfg
         except Exception as e:
             print(f"读取配置文件失败: {e}，将使用默认配置。")

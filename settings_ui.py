@@ -80,10 +80,17 @@ class SettingsWindow:
         self.root.protocol("WM_DELETE_WINDOW", self.root.destroy)
         self.load_profile_to_ui()
 
+    def format_path(self, path):
+        """截断过长路径，保留头尾，方便用户查看"""
+        if not path: return "未选择"
+        if len(path) > 35:
+            return path[:15] + "..." + path[-15:]
+        return path
+
     # ================= 方案管理逻辑 =================
     def on_profile_change(self, event=None):
         self.active_profile_name = self.profile_var.get()
-        self.temp_images = {} # 切换方案时清空临时缓存
+        self.temp_images = {}
         self.load_profile_to_ui()
 
     def create_profile(self):
@@ -93,8 +100,6 @@ class SettingsWindow:
             messagebox.showwarning("提示", "方案名称已存在！")
             return
         
-        # 【核心修复】新建方案时，使用纯净的白猫模板，而不是深拷贝当前方案
-        # 这样可以避免继承当前方案的图片
         new_prof = json.loads(json.dumps(config.DEFAULT_PROFILE))
         new_prof["name"] = new_name
         
@@ -127,6 +132,10 @@ class SettingsWindow:
         tk.Scale(frame, variable=self.var_scale, from_=0.5, to=2.5, resolution=0.1, orient=tk.HORIZONTAL, 
                  bg="#2b2b2b", fg="white", highlightthickness=0, length=400).pack(anchor=tk.W, pady=5)
 
+        # === 新增：窗口置顶选项 ===
+        self.var_always_on_top = tk.BooleanVar(value=global_cfg.get("always_on_top", True))
+        ttk.Checkbutton(frame, text="窗口置顶显示 (取消勾选后，点击其他软件时桌宠会被盖住)", variable=self.var_always_on_top).pack(anchor=tk.W, pady=(10, 0))
+
         ttk.Label(frame, text="麦克风触发阈值", style='Title.TLabel').pack(anchor=tk.W, pady=(20, 5))
         ttk.Label(frame, text="解释：数值越小越容易触发说话动作，建议 0.1 - 0.25 之间。", wraplength=630).pack(anchor=tk.W)
         self.var_mic_threshold = tk.DoubleVar(value=global_cfg["mic"]["threshold"])
@@ -149,9 +158,8 @@ class SettingsWindow:
         self.lbl_char_path = tk.Label(base_frame, text="未选择", bg="#2b2b2b", fg="#aaaaaa", anchor="w")
         self.lbl_char_path.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
         
-        # 【新增】恢复默认白猫按钮
-        tk.Button(base_frame, text="恢复默认白猫", command=self.clear_char_image, bg="#a33", fg="white", relief="flat").pack(side=tk.RIGHT, padx=5)
-        tk.Button(base_frame, text="选择图片", command=lambda: self.select_image("character_path", self.lbl_char_path), bg="#555", fg="white", relief="flat").pack(side=tk.RIGHT)
+        tk.Button(base_frame, text="选择图片", command=lambda: self.select_image("character_path", self.lbl_char_path), bg="#555", fg="white", relief="flat").pack(side=tk.RIGHT, padx=5)
+        tk.Button(base_frame, text="恢复默认白猫", command=self.clear_char_image, bg="#a33", fg="white", relief="flat").pack(side=tk.RIGHT)
 
         self.custom_face_frame = tk.Frame(frame, bg="#2b2b2b")
         self.custom_face_frame.pack(fill=tk.BOTH, expand=True, pady=10)
@@ -163,23 +171,25 @@ class SettingsWindow:
             sub = tk.Frame(self.custom_face_frame, bg="#2b2b2b")
             sub.pack(fill=tk.X, pady=2)
             tk.Label(sub, text=f"{name} 状态:", bg="#2b2b2b", fg="white", width=10, anchor="w").pack(side=tk.LEFT)
+            
             lbl = tk.Label(sub, text="未选择", bg="#2b2b2b", fg="#aaaaaa", anchor="w")
-            lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
             self.face_labels[key] = lbl
             
-            # 【新增】清除该表情图片按钮
-            tk.Button(sub, text="清除", command=lambda k=key, l=lbl: self.clear_face_image(k, l), bg="#555", fg="white", relief="flat").pack(side=tk.RIGHT, padx=5)
+            # 先 pack 右侧按钮，再 pack 左侧 Label
+            tk.Button(sub, text="清除", command=lambda k=key: self.clear_face_image(k), bg="#555", fg="white", relief="flat").pack(side=tk.RIGHT, padx=5)
             tk.Button(sub, text="上传", command=lambda k=key, l=lbl: self.select_image(f"expressions.{k}", l), bg="#555", fg="white", relief="flat").pack(side=tk.RIGHT)
+            
+            lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
 
     def clear_char_image(self):
-        """清空基础角色图片，恢复默认白猫"""
         self.lbl_char_path.config(text="未选择", fg="#aaaaaa")
         if not hasattr(self, 'temp_images'): self.temp_images = {}
-        self.temp_images["character_path"] = ""  # 设为空
-        self.var_show_code_face.set(True)         # 强制开启颜文字，因为没图片了
+        self.temp_images["character_path"] = ""
+        self.var_show_code_face.set(True)
 
-    def clear_face_image(self, key, lbl):
-        """清空某个特定的表情图片"""
+    def clear_face_image(self, key):
+        lbl = self.face_labels.get(key)
+        if not lbl: return
         lbl.config(text="未选择", fg="#aaaaaa")
         if not hasattr(self, 'temp_images'): self.temp_images = {}
         self.temp_images[f"expressions.{key}"] = ""
@@ -193,10 +203,12 @@ class SettingsWindow:
         try:
             shutil.copy(file_path, dest_path)
             rel_path = os.path.join(config.CUSTOM_DIR, filename).replace("\\", "/")
-            label_widget.config(text=rel_path, fg="#4b6eaf")
             
             if not hasattr(self, 'temp_images'): self.temp_images = {}
             self.temp_images[path_key] = rel_path
+            
+            if label_widget:
+                label_widget.config(text=self.format_path(rel_path), fg="#4b6eaf")
         except Exception as e:
             messagebox.showerror("错误", f"复制图片失败: {e}")
 
@@ -281,7 +293,7 @@ class SettingsWindow:
     def build_about_tab(self):
         frame = ttk.Frame(self.tab_about, padding=20)
         frame.pack(fill=tk.BOTH, expand=True)
-        ttk.Label(frame, text="Stream-Mascot 直播桌宠", style='Title.TLabel').pack(anchor=tk.W, pady=(0, 10))
+        ttk.Label(frame, text=f"Stream-Mascot 直播桌宠 v{config.__version__}", style='Title.TLabel').pack(anchor=tk.W, pady=(0, 10))
         desc = "一个纯 Python + Pygame 编写的虚拟挂件。支持全局键鼠监听、麦克风语音联动以及离线语音识别。"
         tk.Label(frame, text=desc, wraplength=630, justify=tk.LEFT, bg="#2b2b2b", fg="#aaaaaa").pack(anchor=tk.W, pady=5)
 
@@ -303,16 +315,17 @@ class SettingsWindow:
         self.var_show_code_face.set(prof.get("show_code_face", True))
         
         char_path = prof.get("character_path", "")
-        self.lbl_char_path.config(text=char_path if char_path else "未选择", fg="#4b6eaf" if char_path else "#aaaaaa")
+        self.lbl_char_path.config(text=self.format_path(char_path) if char_path else "未选择", fg="#4b6eaf" if char_path else "#aaaaaa")
         
         for k, lbl in self.face_labels.items():
             path = prof.get("expressions", {}).get(k, "")
-            lbl.config(text=path if path else "未选择", fg="#4b6eaf" if path else "#aaaaaa")
+            lbl.config(text=self.format_path(path) if path else "未选择", fg="#4b6eaf" if path else "#aaaaaa")
             
         self.rebuild_keywords_ui()
 
     def _write_config(self):
         self.cfg["global"]["scale"] = round(self.var_scale.get(), 1)
+        self.cfg["global"]["always_on_top"] = self.var_always_on_top.get() # 保存置顶状态
         self.cfg["global"]["mic"]["enabled"] = self.var_mic_enabled.get()
         self.cfg["global"]["mic"]["threshold"] = round(self.var_mic_threshold.get(), 2)
         
@@ -320,7 +333,6 @@ class SettingsWindow:
         prof = self.cfg["profiles"][self.active_profile_name]
         prof["show_code_face"] = self.var_show_code_face.get()
         
-        # 处理图片路径 (从临时缓存读取修改)
         if hasattr(self, 'temp_images'):
             for key, val in self.temp_images.items():
                 if key == "character_path":
@@ -329,7 +341,6 @@ class SettingsWindow:
                     exp_key = key.split(".")[1]
                     prof["expressions"][exp_key] = val
                     
-        # 处理关键词
         for k, lb in self.listboxes.items():
             prof["keywords"][k] = list(lb.get(0, tk.END))
 

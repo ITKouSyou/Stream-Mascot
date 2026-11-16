@@ -23,6 +23,7 @@ from effects import ParticleSystem, ContextMenu
 from stt_utils import SpeechRecognizer
 from settings_ui import SettingsWindow
 
+# ================= 核心：去除平滑缩放产生的杂色边缘 =================
 def remove_scale_artifacts(surface):
     arr = pygame.surfarray.pixels3d(surface)
     mask = (arr[:, :, 0] > 180) & (arr[:, :, 2] > 180) & (arr[:, :, 1] < 100)
@@ -33,10 +34,16 @@ def main():
     global reload_requested
     reload_requested = False
     
-    # --- 软重载触发函数，仅修改标志位 ---
     def trigger_reload():
         global reload_requested
         reload_requested = True
+
+    # 打印版本信息
+    print(f"====================================")
+    print(f" 🐾 Stream-Mascot 直播桌宠 v{config.__version__}")
+    print(f"====================================")
+    print(f"作者: ITKouSyou")
+    print(f"GitHub: https://github.com/ITKouSyou/Stream-Mascot\n")
 
     pygame.init()
     pygame.font.init()
@@ -50,11 +57,10 @@ def main():
     if not font: font = pygame.font.Font(None, 20)
     
     screen = pygame.display.set_mode((config.WIDTH, config.HEIGHT), pygame.NOFRAME)
-    pygame.display.set_caption("Stream-Mascot")
+    pygame.display.set_caption(f"Stream-Mascot v{config.__version__}")
     set_window_transparent()
     canvas = pygame.Surface((BASE_WIDTH, BASE_HEIGHT))
 
-    # --- 封装资源加载逻辑，方便软重载 ---
     char_images = {}
     show_code_face = True
     stt = None
@@ -63,12 +69,10 @@ def main():
     def load_assets_and_services():
         nonlocal char_images, show_code_face, stt, mic_stream
         
-        # 1. 重新读取配置文件
         config.CFG = config.load_config()
         active_name = config.CFG["active_profile"]
         active_profile = config.CFG["profiles"].get(active_name, config.CFG["profiles"]["默认白猫"])
         
-        # 2. 重新加载角色图片
         char_images = {}
         show_code_face = active_profile.get("show_code_face", True)
         if active_profile.get("character_path"):
@@ -80,7 +84,6 @@ def main():
                 img = load_image_by_path(path)
                 if img: char_images[exp_name] = img
                 
-        # 3. 重启语音识别（先停旧的，再起新的以应用新词库）
         if stt:
             stt.stop()
             
@@ -120,7 +123,6 @@ def main():
             app.show()
         threading.Thread(target=run_ui, daemon=True).start()
 
-    # 初始化加载一次
     mic_stream = start_mic()
     start_listeners()
     load_assets_and_services()
@@ -155,15 +157,12 @@ def main():
     running = True
 
     while running:
-        # ======== 处理软重载 ========
+        # ======== 软重载处理 ========
         if reload_requested:
             reload_requested = False
             print("\n[系统] 正在执行软重载...")
-            
-            # 1. 重载资源与服务
             load_assets_and_services()
             
-            # 2. 重新适配窗口大小 (用户可能修改了缩放)
             new_w = int(BASE_WIDTH * config.CFG["global"]["scale"])
             new_h = int(BASE_HEIGHT * config.CFG["global"]["scale"])
             if new_w != config.WIDTH or new_h != config.HEIGHT:
@@ -243,8 +242,18 @@ def main():
             next_blink = now + random.uniform(2, 5)
         is_blinking = now < blink_until
 
+        is_typing, is_clicking = get_input_state()
+        active_chars = get_active_chars()
+
         if MIC_ENABLED:
-            if get_volume() > config.CFG["global"]["mic"]["threshold"]:
+            current_vol = get_volume()
+            dynamic_threshold = config.CFG["global"]["mic"]["threshold"]
+            
+            # 输入防干扰：打字/点击时阈值翻倍
+            if is_typing or is_clicking:
+                dynamic_threshold *= 2.0
+
+            if current_vol > dynamic_threshold:
                 is_talking = True
                 last_talk_time = now
             if now - last_talk_time < config.CFG["global"]["mic"]["release_time"]:
@@ -254,9 +263,6 @@ def main():
                 is_talking = False
                 mouth_open = False
 
-        is_typing, is_clicking = get_input_state()
-        active_chars = get_active_chars()
-        
         if is_typing and random.random() < 0.1:
             particle_sys.emit(450, 300, count=1, color=(100, 200, 255), ptype="star")
 

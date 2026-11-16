@@ -1,5 +1,5 @@
 {
-  "active_profile": "自定义角色",
+  "active_profile": "ITKouSyou",
   "profiles": {
     "默认白猫": {
       "name": "默认白猫",
@@ -57,6 +57,58 @@
       "name": "自定义角色",
       "character_path": "custom_assets/微信图片_2026-09-16_161059_158.jpg",
       "show_code_face": false,
+      "expressions": {
+        "normal": "",
+        "heart": "custom_assets/aixin.jpg",
+        "angry": "custom_assets/8798c3cec3fdfc0324d45489923f8794a4c22633.gif",
+        "cry": "custom_assets/kuku.jpg",
+        "surprised": "",
+        "speechless": ""
+      },
+      "keywords": {
+        "heart": [
+          "谢谢",
+          "哇",
+          "爱你",
+          "喜欢",
+          "么么哒",
+          "牛逼"
+        ],
+        "angry": [
+          "靠",
+          "无语",
+          "生气",
+          "烦",
+          "傻逼",
+          "操",
+          "滚"
+        ],
+        "cry": [
+          "呜呜",
+          "哭",
+          "委屈",
+          "可怜",
+          "难过"
+        ],
+        "surprised": [
+          "卧槽",
+          "居然",
+          "竟然",
+          "妈呀",
+          "真的假的"
+        ],
+        "speechless": [
+          "服了",
+          "醉了",
+          "搞笑",
+          "离谱"
+        ]
+      }
+    },
+    "ITKouSyou": {
+      "name": "ITKouSyou",
+      "character_path": "",
+      "show_code_face": true,
       "expressions": {
         "normal": "",
         "heart": "custom_assets/aixin.jpg",
@@ -171,6 +223,7 @@
         200,
         255
       ]
-    }
+    },
+    "always_on_top": true
   }
 }
