@@ -1,21 +1,20 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_data_files, collect_dynamic_libs, collect_submodules
+from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dynamic_libs
 
-# 自动收集 vosk 的数据文件、动态链接库(DLL)和隐式导入模块
-vosk_datas = collect_data_files('vosk')
-vosk_binaries = collect_dynamic_libs('vosk')
-vosk_hiddenimports = collect_submodules('vosk')
+# ================= 收集 Vosk 及其 DLL =================
+# 强制收集 vosk 的数据、动态库和隐式导入
+vosk_datas, vosk_binaries, vosk_hiddenimports = collect_all('vosk')
 
-# 自动收集 Pillow 的图像格式支持数据（用于解析 GIF）
-pil_datas = collect_data_files('PIL')
+# ================= 收集 Pillow (PIL) 及其 C 扩展 =================
+# 强制收集 PIL 的所有数据、二进制 (包括 _imaging.pyd) 和隐藏导入
+pil_datas, pil_binaries, pil_hiddenimports = collect_all('PIL')
 
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=vosk_binaries,
-    # 将 vosk 数据、PIL 数据打包，同时如果你想把默认的 config.json 也打进去，可以加在这里
+    binaries=vosk_binaries + pil_binaries, # 合并所有动态链接库
     datas=vosk_datas + pil_datas,
-    hiddenimports=vosk_hiddenimports + [
+    hiddenimports=vosk_hiddenimports + pil_hiddenimports + [
         'tkinter', 
         'tkinter.ttk', 
         'tkinter.messagebox', 
@@ -38,18 +37,17 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='Stream-Mascot',  # 直接输出为你想要的软件名
+    name='Stream-Mascot',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=False,         # 隐藏黑色控制台窗口
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    # icon='icon.ico'      # 如果你准备了一个 icon.ico，取消这行注释即可给 exe 加图标
 )

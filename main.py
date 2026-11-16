@@ -33,6 +33,7 @@ def main():
     global reload_requested
     reload_requested = False
     
+    # --- 软重载触发函数，仅修改标志位 ---
     def trigger_reload():
         global reload_requested
         reload_requested = True
@@ -53,43 +54,45 @@ def main():
     set_window_transparent()
     canvas = pygame.Surface((BASE_WIDTH, BASE_HEIGHT))
 
-    # 根据当前激活的方案加载资源
-    active_name = CFG["active_profile"]
-    active_profile = CFG["profiles"].get(active_name, CFG["profiles"]["默认白猫"])
-    
-    show_code_face = active_profile.get("show_code_face", True)
+    # --- 封装资源加载逻辑，方便软重载 ---
     char_images = {}
-    
-    # 加载基础形象
-    if active_profile.get("character_path"):
-        img = load_image_by_path(active_profile["character_path"])
-        if img: char_images["normal"] = img
+    show_code_face = True
+    stt = None
+    mic_stream = None
+
+    def load_assets_and_services():
+        nonlocal char_images, show_code_face, stt, mic_stream
         
-    # 加载自定义表情图片
-    for exp_name, path in active_profile.get("expressions", {}).items():
-        if path:
-            img = load_image_by_path(path)
-            if img: char_images[exp_name] = img
-
-    mic_stream = start_mic()
-    start_listeners()
-
-    is_dragging = False
-    drag_start_global = (0, 0)
-    window_start_pos = (0, 0)
-    
-    next_blink = time.time() + random.uniform(2, 5)
-    blink_until = 0.0
-    current_hand_x, current_hand_y = 115, 297
-    is_talking, last_talk_time, mouth_open = False, 0.0, False
-    
-    current_expression = "normal"
-    expression_end_time = 0.0
-    particle_sys = ParticleSystem()
-    active_menu = None
-    
-    is_click_through = False
-    toggle_click_through_flag = False
+        # 1. 重新读取配置文件
+        config.CFG = config.load_config()
+        active_name = config.CFG["active_profile"]
+        active_profile = config.CFG["profiles"].get(active_name, config.CFG["profiles"]["默认白猫"])
+        
+        # 2. 重新加载角色图片
+        char_images = {}
+        show_code_face = active_profile.get("show_code_face", True)
+        if active_profile.get("character_path"):
+            img = load_image_by_path(active_profile["character_path"])
+            if img: char_images["normal"] = img
+            
+        for exp_name, path in active_profile.get("expressions", {}).items():
+            if path:
+                img = load_image_by_path(path)
+                if img: char_images[exp_name] = img
+                
+        # 3. 重启语音识别（先停旧的，再起新的以应用新词库）
+        if stt:
+            stt.stop()
+            
+        def on_speech_recognized(text):
+            text = text.replace(" ", "")
+            keywords_dict = active_profile.get("keywords", {})
+            for emotion, keywords in keywords_dict.items():
+                for kw in keywords:
+                    if kw in text:
+                        trigger_expression(emotion)
+                        break
+        stt = SpeechRecognizer(callback=on_speech_recognized)
 
     def trigger_expression(emotion):
         nonlocal current_expression, expression_end_time
@@ -117,17 +120,27 @@ def main():
             app.show()
         threading.Thread(target=run_ui, daemon=True).start()
 
-    def on_speech_recognized(text):
-        text = text.replace(" ", "")
-        # 动态读取当前方案的词库
-        keywords_dict = active_profile.get("keywords", {})
-        for emotion, keywords in keywords_dict.items():
-            for kw in keywords:
-                if kw in text:
-                    trigger_expression(emotion)
-                    break
+    # 初始化加载一次
+    mic_stream = start_mic()
+    start_listeners()
+    load_assets_and_services()
 
-    stt = SpeechRecognizer(callback=on_speech_recognized)
+    is_dragging = False
+    drag_start_global = (0, 0)
+    window_start_pos = (0, 0)
+    
+    next_blink = time.time() + random.uniform(2, 5)
+    blink_until = 0.0
+    current_hand_x, current_hand_y = 115, 297
+    is_talking, last_talk_time, mouth_open = False, 0.0, False
+    
+    current_expression = "normal"
+    expression_end_time = 0.0
+    particle_sys = ParticleSystem()
+    active_menu = None
+    
+    is_click_through = False
+    toggle_click_through_flag = False
 
     def on_hotkey_press(key):
         nonlocal toggle_click_through_flag
@@ -142,13 +155,28 @@ def main():
     running = True
 
     while running:
+        # ======== 处理软重载 ========
         if reload_requested:
-            running = False
-            break
+            reload_requested = False
+            print("\n[系统] 正在执行软重载...")
+            
+            # 1. 重载资源与服务
+            load_assets_and_services()
+            
+            # 2. 重新适配窗口大小 (用户可能修改了缩放)
+            new_w = int(BASE_WIDTH * config.CFG["global"]["scale"])
+            new_h = int(BASE_HEIGHT * config.CFG["global"]["scale"])
+            if new_w != config.WIDTH or new_h != config.HEIGHT:
+                config.WIDTH, config.HEIGHT = new_w, new_h
+                config.SCALE = config.CFG["global"]["scale"]
+                screen = pygame.display.set_mode((new_w, new_h), pygame.NOFRAME)
+                set_window_transparent()
+                
+            print("[系统] 软重载完成！")
 
         wx, wy = get_window_pos()
         cur_x, cur_y = win32api.GetCursorPos()
-        current_scale = config.SCALE
+        current_scale = config.CFG["global"]["scale"]
         
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -216,12 +244,12 @@ def main():
         is_blinking = now < blink_until
 
         if MIC_ENABLED:
-            if get_volume() > CFG["global"]["mic"]["threshold"]:
+            if get_volume() > config.CFG["global"]["mic"]["threshold"]:
                 is_talking = True
                 last_talk_time = now
-            if now - last_talk_time < CFG["global"]["mic"]["release_time"]:
+            if now - last_talk_time < config.CFG["global"]["mic"]["release_time"]:
                 is_talking = True
-                mouth_open = (int(now * CFG["global"]["mic"]["mouth_speed"]) % 2 == 0)
+                mouth_open = (int(now * config.CFG["global"]["mic"]["mouth_speed"]) % 2 == 0)
             else:
                 is_talking = False
                 mouth_open = False
@@ -233,7 +261,6 @@ def main():
             particle_sys.emit(450, 300, count=1, color=(100, 200, 255), ptype="star")
 
         canvas.fill((255, 0, 255))
-        # 核心：传入 char_images 字典和 show_code_face 开关
         draw_background_and_cat(canvas, is_blinking, is_talking, is_typing, mouth_open, char_images, show_code_face, current_expression)
         draw_mouse_hand(canvas, current_hand_x, current_hand_y, is_clicking)
         draw_keyboard_hand(canvas, is_typing, active_chars, font)
@@ -242,7 +269,7 @@ def main():
         if active_menu:
             active_menu.draw(canvas, font)
 
-        if config.SCALE != 1.0:
+        if current_scale != 1.0:
             scaled_canvas = pygame.transform.smoothscale(canvas, (config.WIDTH, config.HEIGHT))
             remove_scale_artifacts(scaled_canvas)
             screen.blit(scaled_canvas, (0, 0))
@@ -255,12 +282,8 @@ def main():
     stop_listeners()
     stop_mic(mic_stream)
     hotkey_listener.stop()
-    stt.stop()
+    if stt: stt.stop()
     pygame.quit()
-
-    if reload_requested:
-        print("\n[系统] 正在重新加载桌宠...")
-        os.execl(sys.executable, sys.executable, *sys.argv)
 
 if __name__ == "__main__":
     main()
