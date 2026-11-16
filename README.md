@@ -73,6 +73,45 @@ python main.py
 - **`F8`**：开启/关闭鼠标穿透。
 - **`Esc`**：退出程序。
 
+## 📦 打包为独立可执行文件 (.exe)
+
+由于本项目依赖了 `Vosk`（包含底层的 C 语言动态链接库 DLL）以及 `Pillow`（用于 GIF 解析）和 `Tkinter`（设置界面），推荐使用以下两种方式进行打包：
+
+首先，请确保安装了打包工具：
+```bash
+pip install pyinstaller
+```
+
+### 方式一：使用 spec 文件（🌟 强烈推荐）
+这种方式能够自动收集 `Vosk` 的底层 DLL 和 `Tkinter` 的隐式依赖，打包出来的程序稳定性最高。项目根目录已经为你准备好了 `main.spec`。
+
+```bash
+pyinstaller main.spec
+```
+
+### 方式二：使用命令行参数
+如果你更习惯纯命令行，可以使用 `--collect-all` 参数强制包含依赖：
+
+```bash
+pyinstaller -F -w --collect-all vosk main.py
+```
+
+### 📁 整理发布文件夹（重要！）
+无论使用哪种方式，打包完成后，进入 `dist` 文件夹。你需要将以下文件/文件夹与生成的 `.exe` 放在同一个目录下才能正常运行：
+
+- **必须**将项目根目录下的 `model` 文件夹复制过去。
+- **必须**将 `config.json` 复制过去（如果你已经配置好了设置的话）。
+- （可选）如果你在设置里上传过自定义图片，请将 `custom_assets` 文件夹也一并复制过去。
+
+最终发布文件夹的结构应该如下：
+```text
+发布文件夹/
+├── Stream-Mascot.exe    # (或 main.exe) 打包好的程序
+├── config.json          # 你的配置文件
+├── model/               # 语音模型文件夹
+└── custom_assets/       # (可选) 用户上传的自定义图片/GIF
+```
+
 ## 📁 项目结构
 
 ```text
@@ -86,6 +125,7 @@ Stream-Mascot/
 ├── renderer.py         # 核心绘制逻辑（动画、GIF解码、颜文字、双手）
 ├── effects.py          # 粒子特效与右键菜单UI模块
 ├── settings_ui.py      # 深色设置界面模块（Tkinter）
+├── main.spec           # PyInstaller 打包配置文件
 ├── custom_assets/      # 【自动生成】用户上传的自定义角色/表情图片存放处
 ├── config.json         # 运行时配置文件
 ├── requirements.txt    # Python 依赖清单
