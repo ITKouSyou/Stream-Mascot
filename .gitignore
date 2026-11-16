@@ -30,6 +30,18 @@ ENV/
 # ---- PyInstaller ----
 *.spec
 
+# ---- 运行生成的文件 ----
+# 用户上传的自定义图片/GIF 文件夹
+custom_assets/
+# 配置文件包含用户的本地路径，不建议提交（程序首次运行会自动生成）
+config.json
+# 运行日志
+*.log
+
+# ---- 语音模型 (体积过大，请自行下载) ----
+model/
+model/*
+
 # ---- 缓存 / 测试 ----
 .pytest_cache/
 .mypy_cache/
@@ -37,10 +49,6 @@ ENV/
 .coverage
 htmlcov/
 .tox/
-
-# ---- 本地配置文件 ----
-config.local.json
-*.log
 
 # ---- 编辑器 / IDE ----
 .vscode/

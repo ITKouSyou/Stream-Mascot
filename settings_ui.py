@@ -1,9 +1,10 @@
 import os
 import json
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog, simpledialog
 import config
-import webbrowser  # 新增：用于打开浏览器链接
+import webbrowser
+import shutil
 
 CONFIG_FILE = "config.json"
 
@@ -12,9 +13,13 @@ class SettingsWindow:
         self.on_save = on_save_callback
         self.on_interact = on_interact_callback
         
+        self.cfg = config.load_config()
+        self.active_profile_name = self.cfg["active_profile"]
+        self.temp_images = {} # 用于记录 UI 上的临时修改
+        
         self.root = tk.Tk()
         self.root.title("Stream-Mascot 设置")
-        self.root.geometry("600x780")
+        self.root.geometry("700x800")
         self.root.configure(bg="#2b2b2b")
         self.root.resizable(False, False)
         self.root.attributes("-topmost", True)
@@ -29,96 +34,211 @@ class SettingsWindow:
         style.configure('Title.TLabel', foreground='white', font=('微软雅黑', 12, 'bold'))
         style.configure('TCheckbutton', background='#2b2b2b', foreground='white', font=('微软雅黑', 10))
         
+        # --- 顶部方案管理 ---
+        top_frame = tk.Frame(self.root, bg="#1e1e1e", pady=10, padx=10)
+        top_frame.pack(fill=tk.X)
+        
+        tk.Label(top_frame, text="当前方案:", bg="#1e1e1e", fg="white", font=('微软雅黑', 10, 'bold')).pack(side=tk.LEFT)
+        self.profile_var = tk.StringVar(value=self.active_profile_name)
+        self.profile_combo = ttk.Combobox(top_frame, textvariable=self.profile_var, state="readonly", width=20)
+        self.profile_combo['values'] = list(self.cfg["profiles"].keys())
+        self.profile_combo.pack(side=tk.LEFT, padx=10)
+        self.profile_combo.bind("<<ComboboxSelected>>", self.on_profile_change)
+        
+        tk.Button(top_frame, text="+ 新建", command=self.create_profile, bg="#4b6eaf", fg="white", relief="flat").pack(side=tk.LEFT, padx=5)
+        tk.Button(top_frame, text="- 删除", command=self.delete_profile, bg="#a33", fg="white", relief="flat").pack(side=tk.LEFT)
+
+        # --- 底部保存按钮 ---
         btn_frame = tk.Frame(self.root, bg="#2b2b2b")
         btn_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
-        
         tk.Button(btn_frame, text="仅保存（不重启）", command=self.apply_only, bg="#555555", fg="white", font=('微软雅黑', 10), relief="flat", width=15).pack(side=tk.LEFT)
         tk.Button(btn_frame, text="保存并重启", command=self.save_and_reload, bg="#4b6eaf", fg="white", font=('微软雅黑', 10, 'bold'), relief="flat", width=15).pack(side=tk.RIGHT)
         tk.Button(btn_frame, text="取消", command=self.root.destroy, bg="#555555", fg="white", font=('微软雅黑', 10), relief="flat", width=10).pack(side=tk.RIGHT, padx=10)
 
+        # --- 中间标签页 ---
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
-        self.tab_config = ttk.Frame(self.notebook)
+        self.tab_global = ttk.Frame(self.notebook)
+        self.tab_char = ttk.Frame(self.notebook)
         self.tab_keywords = ttk.Frame(self.notebook)
         self.tab_action = ttk.Frame(self.notebook)
         self.tab_about = ttk.Frame(self.notebook)
 
-        self.notebook.add(self.tab_config, text='基本设置')
+        self.notebook.add(self.tab_global, text='全局设置')
+        self.notebook.add(self.tab_char, text='角色与表情')
         self.notebook.add(self.tab_keywords, text='语音词库')
         self.notebook.add(self.tab_action, text='快捷互动')
         self.notebook.add(self.tab_about, text='关于与教程')
 
-        self.build_config_tab()
+        self.build_global_tab()
+        self.build_char_tab()
         self.build_keywords_tab()
         self.build_action_tab()
         self.build_about_tab()
 
         self.root.protocol("WM_DELETE_WINDOW", self.root.destroy)
+        self.load_profile_to_ui()
 
-    def build_config_tab(self):
-        frame = ttk.Frame(self.tab_config, padding=15)
+    # ================= 方案管理逻辑 =================
+    def on_profile_change(self, event=None):
+        self.active_profile_name = self.profile_var.get()
+        self.temp_images = {} # 切换方案时清空临时缓存
+        self.load_profile_to_ui()
+
+    def create_profile(self):
+        new_name = simpledialog.askstring("新建方案", "请输入方案名称:", parent=self.root)
+        if not new_name: return
+        if new_name in self.cfg["profiles"]:
+            messagebox.showwarning("提示", "方案名称已存在！")
+            return
+        
+        # 【核心修复】新建方案时，使用纯净的白猫模板，而不是深拷贝当前方案
+        # 这样可以避免继承当前方案的图片
+        new_prof = json.loads(json.dumps(config.DEFAULT_PROFILE))
+        new_prof["name"] = new_name
+        
+        self.cfg["profiles"][new_name] = new_prof
+        self.profile_combo['values'] = list(self.cfg["profiles"].keys())
+        self.profile_var.set(new_name)
+        self.on_profile_change()
+
+    def delete_profile(self):
+        if len(self.cfg["profiles"]) <= 1:
+            messagebox.showwarning("提示", "至少需要保留一个方案！")
+            return
+        
+        if messagebox.askyesno("确认", f"确定要删除方案「{self.active_profile_name}」吗？"):
+            del self.cfg["profiles"][self.active_profile_name]
+            self.active_profile_name = list(self.cfg["profiles"].keys())[0]
+            self.profile_combo['values'] = list(self.cfg["profiles"].keys())
+            self.profile_var.set(self.active_profile_name)
+            self.on_profile_change()
+
+    # ================= UI 构建 =================
+    def build_global_tab(self):
+        frame = ttk.Frame(self.tab_global, padding=15)
         frame.pack(fill=tk.BOTH, expand=True)
-        cfg = config.load_config()
+        global_cfg = self.cfg["global"]
 
         ttk.Label(frame, text="窗口缩放比例", style='Title.TLabel').pack(anchor=tk.W, pady=(10, 5))
-        ttk.Label(frame, text="解释：控制桌宠在屏幕上的显示大小，默认 1.0。修改后需重启才能看到变化。", wraplength=530).pack(anchor=tk.W)
-        self.var_scale = tk.DoubleVar(value=cfg.get("scale", 1.0))
+        ttk.Label(frame, text="解释：控制桌宠在屏幕上的显示大小，默认 1.0。修改后需重启才能看到变化。", wraplength=630).pack(anchor=tk.W)
+        self.var_scale = tk.DoubleVar(value=global_cfg.get("scale", 1.0))
         tk.Scale(frame, variable=self.var_scale, from_=0.5, to=2.5, resolution=0.1, orient=tk.HORIZONTAL, 
                  bg="#2b2b2b", fg="white", highlightthickness=0, length=400).pack(anchor=tk.W, pady=5)
 
         ttk.Label(frame, text="麦克风触发阈值", style='Title.TLabel').pack(anchor=tk.W, pady=(20, 5))
-        ttk.Label(frame, text="解释：数值越小越容易触发说话动作，建议 0.1 - 0.25 之间。如果发现猫猫经常无端张嘴，请调大这个值。", wraplength=530).pack(anchor=tk.W)
-        self.var_mic_threshold = tk.DoubleVar(value=cfg["mic"]["threshold"])
+        ttk.Label(frame, text="解释：数值越小越容易触发说话动作，建议 0.1 - 0.25 之间。", wraplength=630).pack(anchor=tk.W)
+        self.var_mic_threshold = tk.DoubleVar(value=global_cfg["mic"]["threshold"])
         tk.Scale(frame, variable=self.var_mic_threshold, from_=0.01, to=0.5, resolution=0.01, orient=tk.HORIZONTAL, 
                  bg="#2b2b2b", fg="white", highlightthickness=0, length=400).pack(anchor=tk.W, pady=5)
 
-        ttk.Label(frame, text="嘴巴张合速度", style='Title.TLabel').pack(anchor=tk.W, pady=(20, 5))
-        ttk.Label(frame, text="解释：数值越大，说话时嘴巴开合的频率越快，默认为 10。", wraplength=530).pack(anchor=tk.W)
-        self.var_mouth_speed = tk.IntVar(value=cfg["mic"].get("mouth_speed", 10))
-        tk.Scale(frame, variable=self.var_mouth_speed, from_=1, to=20, orient=tk.HORIZONTAL, 
-                 bg="#2b2b2b", fg="white", highlightthickness=0, length=400).pack(anchor=tk.W, pady=5)
+        self.var_mic_enabled = tk.BooleanVar(value=global_cfg["mic"]["enabled"])
+        ttk.Checkbutton(frame, text="启用麦克风互动 (说话嘴型)", variable=self.var_mic_enabled).pack(anchor=tk.W, pady=(20, 0))
 
-        self.var_mic_enabled = tk.BooleanVar(value=cfg["mic"]["enabled"])
-        ttk.Checkbutton(frame, text="启用麦克风互动 (关闭后不再识别声音和触发语音表情)", variable=self.var_mic_enabled).pack(anchor=tk.W, pady=(20, 0))
+    def build_char_tab(self):
+        frame = ttk.Frame(self.tab_char, padding=15)
+        frame.pack(fill=tk.BOTH, expand=True)
+
+        self.var_show_code_face = tk.BooleanVar()
+        ttk.Checkbutton(frame, text="使用自带的颜文字表情 (如果关闭，请上传对应的表情图片)", variable=self.var_show_code_face).pack(anchor=tk.W, pady=(0, 15))
+
+        base_frame = tk.LabelFrame(frame, text="基础角色图片 (normal)", bg="#2b2b2b", fg="#4b6eaf", font=('微软雅黑', 10, 'bold'))
+        base_frame.pack(fill=tk.X, pady=5)
+        
+        self.lbl_char_path = tk.Label(base_frame, text="未选择", bg="#2b2b2b", fg="#aaaaaa", anchor="w")
+        self.lbl_char_path.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=5, pady=5)
+        
+        # 【新增】恢复默认白猫按钮
+        tk.Button(base_frame, text="恢复默认白猫", command=self.clear_char_image, bg="#a33", fg="white", relief="flat").pack(side=tk.RIGHT, padx=5)
+        tk.Button(base_frame, text="选择图片", command=lambda: self.select_image("character_path", self.lbl_char_path), bg="#555", fg="white", relief="flat").pack(side=tk.RIGHT)
+
+        self.custom_face_frame = tk.Frame(frame, bg="#2b2b2b")
+        self.custom_face_frame.pack(fill=tk.BOTH, expand=True, pady=10)
+        
+        self.face_labels = {}
+        emotions = [("heart", "爱心眼"), ("angry", "生气"), ("cry", "哭泣"), ("surprised", "震惊"), ("speechless", "无语")]
+        
+        for key, name in emotions:
+            sub = tk.Frame(self.custom_face_frame, bg="#2b2b2b")
+            sub.pack(fill=tk.X, pady=2)
+            tk.Label(sub, text=f"{name} 状态:", bg="#2b2b2b", fg="white", width=10, anchor="w").pack(side=tk.LEFT)
+            lbl = tk.Label(sub, text="未选择", bg="#2b2b2b", fg="#aaaaaa", anchor="w")
+            lbl.pack(side=tk.LEFT, fill=tk.X, expand=True)
+            self.face_labels[key] = lbl
+            
+            # 【新增】清除该表情图片按钮
+            tk.Button(sub, text="清除", command=lambda k=key, l=lbl: self.clear_face_image(k, l), bg="#555", fg="white", relief="flat").pack(side=tk.RIGHT, padx=5)
+            tk.Button(sub, text="上传", command=lambda k=key, l=lbl: self.select_image(f"expressions.{k}", l), bg="#555", fg="white", relief="flat").pack(side=tk.RIGHT)
+
+    def clear_char_image(self):
+        """清空基础角色图片，恢复默认白猫"""
+        self.lbl_char_path.config(text="未选择", fg="#aaaaaa")
+        if not hasattr(self, 'temp_images'): self.temp_images = {}
+        self.temp_images["character_path"] = ""  # 设为空
+        self.var_show_code_face.set(True)         # 强制开启颜文字，因为没图片了
+
+    def clear_face_image(self, key, lbl):
+        """清空某个特定的表情图片"""
+        lbl.config(text="未选择", fg="#aaaaaa")
+        if not hasattr(self, 'temp_images'): self.temp_images = {}
+        self.temp_images[f"expressions.{key}"] = ""
+
+    def select_image(self, path_key, label_widget):
+        file_path = filedialog.askopenfilename(title="选择图片", filetypes=[("Image files", "*.png;*.jpg;*.jpeg;*.gif")])
+        if not file_path: return
+        
+        filename = os.path.basename(file_path)
+        dest_path = os.path.join(config.CUSTOM_DIR, filename)
+        try:
+            shutil.copy(file_path, dest_path)
+            rel_path = os.path.join(config.CUSTOM_DIR, filename).replace("\\", "/")
+            label_widget.config(text=rel_path, fg="#4b6eaf")
+            
+            if not hasattr(self, 'temp_images'): self.temp_images = {}
+            self.temp_images[path_key] = rel_path
+        except Exception as e:
+            messagebox.showerror("错误", f"复制图片失败: {e}")
 
     def build_keywords_tab(self):
-        frame = ttk.Frame(self.tab_keywords, padding=10)
-        frame.pack(fill=tk.BOTH, expand=True)
-        
-        cfg = config.load_config()
-        self.keyword_vars = {}
+        self.kw_frame = ttk.Frame(self.tab_keywords, padding=10)
+        self.kw_frame.pack(fill=tk.BOTH, expand=True)
         self.listboxes = {}
+        self.rebuild_keywords_ui()
+
+    def rebuild_keywords_ui(self):
+        for widget in self.kw_frame.winfo_children():
+            widget.destroy()
+        
+        self.listboxes = {}
+        prof = self.cfg["profiles"][self.active_profile_name]
+        show_code = prof.get("show_code_face", True)
 
         emotions = {
-            "heart": "♥ 爱心眼",
-            "angry": "╬ 生气",
-            "cry": "ಥ 哭泣",
-            "surprised": "⊙ 震惊",
-            "speechless": "￣ 无语"
+            "heart": "♥ 爱心眼", "angry": "╬ 生气", "cry": "ಥ 哭泣", "surprised": "⊙ 震惊", "speechless": "￣ 无语"
         }
+        
+        msg_text = "当前为自定义表情模式，请为每种状态配置触发词。" if not show_code else "当前为颜文字模式，请配置触发词。"
+        tk.Label(self.kw_frame, text=msg_text, bg="#2b2b2b", fg="#4b6eaf").grid(row=0, column=0, columnspan=2, sticky=tk.W, pady=(0, 10))
 
         for idx, (key, label_text) in enumerate(emotions.items()):
             col = idx % 2
-            row = idx // 2
-            
-            sub_frame = tk.LabelFrame(frame, text=label_text, bg="#2b2b2b", fg="#4b6eaf", font=('微软雅黑', 10, 'bold'), bd=1)
+            row = (idx // 2) + 1
+            sub_frame = tk.LabelFrame(self.kw_frame, text=label_text, bg="#2b2b2b", fg="#4b6eaf", font=('微软雅黑', 10, 'bold'))
             sub_frame.grid(row=row, column=col, padx=5, pady=5, sticky="nsew")
-            frame.grid_columnconfigure(col, weight=1)
+            self.kw_frame.grid_columnconfigure(col, weight=1)
 
-            lb = tk.Listbox(sub_frame, height=4, bg="#3c3f41", fg="white", selectbackground="#4b6eaf", font=('微软雅黑', 10), bd=0)
+            lb = tk.Listbox(sub_frame, height=4, bg="#3c3f41", fg="white", selectbackground="#4b6eaf")
             lb.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
             self.listboxes[key] = lb
             
-            for kw in cfg["keywords"][key]:
+            for kw in prof["keywords"].get(key, []):
                 lb.insert(tk.END, kw)
 
             op_frame = tk.Frame(sub_frame, bg="#2b2b2b")
             op_frame.pack(fill=tk.X, padx=5, pady=5)
-
             entry = tk.Entry(op_frame, bg="#1e1e1e", fg="white", insertbackground="white", width=10)
             entry.pack(side=tk.LEFT, padx=(0, 5))
-            
             tk.Button(op_frame, text="+", width=2, bg="#4b6eaf", fg="white", relief="flat",
                       command=lambda k=key, e=entry, l=lb: self.add_keyword(k, e, l)).pack(side=tk.LEFT, padx=2)
             tk.Button(op_frame, text="-", width=2, bg="#a33", fg="white", relief="flat",
@@ -126,38 +246,30 @@ class SettingsWindow:
 
     def add_keyword(self, emotion, entry_widget, listbox):
         word = entry_widget.get().strip()
-        if not word:
-            return
-        
+        if not word: return
         for k, lb in self.listboxes.items():
             if word in lb.get(0, tk.END):
-                messagebox.showwarning("提示", f"关键词「{word}」已经在 [{k}] 表情中存在，不能重复！")
+                messagebox.showwarning("提示", f"关键词「{word}」已在其他表情中存在！")
                 return
-                
         listbox.insert(tk.END, word)
         entry_widget.delete(0, tk.END)
 
     def remove_keyword(self, emotion, listbox):
-        selection = listbox.curselection()
-        if not selection:
-            messagebox.showinfo("提示", "请先在列表中点击选中要删除的词。")
-            return
-        
+        sel = listbox.curselection()
+        if not sel: return
         if listbox.size() <= 1:
-            messagebox.showwarning("提示", "每个表情至少需要保留一个触发词！")
+            messagebox.showwarning("提示", "至少保留一个触发词！")
             return
-            
-        listbox.delete(selection[0])
+        listbox.delete(sel[0])
 
     def build_action_tab(self):
         frame = ttk.Frame(self.tab_action, padding=20)
         frame.pack(fill=tk.BOTH, expand=True)
-
         ttk.Label(frame, text="手动触发互动", style='Title.TLabel').pack(anchor=tk.W, pady=(10, 15))
         
         def create_btn(text, action):
             tk.Button(frame, text=text, bg="#3c3f41", fg="white", font=('微软雅黑', 11), relief="flat", width=25,
-                      command=lambda: self.trigger_action(action)).pack(pady=6)
+                      command=lambda: self.on_interact(action)).pack(pady=6)
 
         create_btn("比个心 (♥ω♥)", "heart")
         create_btn("生气了 (╬▔皿▔)", "angry")
@@ -169,75 +281,66 @@ class SettingsWindow:
     def build_about_tab(self):
         frame = ttk.Frame(self.tab_about, padding=20)
         frame.pack(fill=tk.BOTH, expand=True)
-
         ttk.Label(frame, text="Stream-Mascot 直播桌宠", style='Title.TLabel').pack(anchor=tk.W, pady=(0, 10))
-        
-        desc = "一个纯 Python + Pygame 编写的虚拟挂件。支持全局键鼠监听、麦克风语音联动以及离线语音识别表情互动。"
-        tk.Label(frame, text=desc, wraplength=530, justify=tk.LEFT, bg="#2b2b2b", fg="#aaaaaa", font=('微软雅黑', 10)).pack(anchor=tk.W, pady=5)
+        desc = "一个纯 Python + Pygame 编写的虚拟挂件。支持全局键鼠监听、麦克风语音联动以及离线语音识别。"
+        tk.Label(frame, text=desc, wraplength=630, justify=tk.LEFT, bg="#2b2b2b", fg="#aaaaaa").pack(anchor=tk.W, pady=5)
 
-        # ======== 新增：作者信息 ========
         ttk.Label(frame, text="作者信息", style='Title.TLabel').pack(anchor=tk.W, pady=(15, 5))
+        def open_link(url): webbrowser.open_new(url)
         
-        # 点击链接打开浏览器的函数
-        def open_link(url):
-            webbrowser.open_new(url)
+        tk.Label(frame, text="作者：ITKouSyou", bg="#2b2b2b", fg="white", font=('微软雅黑', 10, 'bold')).pack(anchor=tk.W)
+        
+        gf = tk.Frame(frame, bg="#2b2b2b")
+        gf.pack(anchor=tk.W, fill=tk.X, pady=2)
+        tk.Label(gf, text="GitHub：", bg="#2b2b2b", fg="#cccccc").pack(side=tk.LEFT)
+        gl = tk.Label(gf, text="https://github.com/ITKouSyou/Stream-Mascot", bg="#2b2b2b", fg="#4b6eaf", underline=True, cursor="hand2")
+        gl.pack(side=tk.LEFT)
+        gl.bind("<Button-1>", lambda e: open_link("https://github.com/ITKouSyou/Stream-Mascot"))
 
-        author_frame = tk.Frame(frame, bg="#2b2b2b")
-        author_frame.pack(anchor=tk.W, fill=tk.X, pady=2)
-
-        tk.Label(author_frame, text="作者：", bg="#2b2b2b", fg="#cccccc", font=('微软雅黑', 10)).pack(side=tk.LEFT)
-        tk.Label(author_frame, text="ITKouSyou", bg="#2b2b2b", fg="#ffffff", font=('微软雅黑', 10, 'bold')).pack(side=tk.LEFT)
-
-        bili_frame = tk.Frame(frame, bg="#2b2b2b")
-        bili_frame.pack(anchor=tk.W, fill=tk.X, pady=2)
-        tk.Label(bili_frame, text="B站主页：", bg="#2b2b2b", fg="#cccccc", font=('微软雅黑', 10)).pack(side=tk.LEFT)
-        bili_link = tk.Label(bili_frame, text="https://space.bilibili.com/7243785", bg="#2b2b2b", fg="#4b6eaf", font=('微软雅黑', 10, 'underline'), cursor="hand2")
-        bili_link.pack(side=tk.LEFT)
-        bili_link.bind("<Button-1>", lambda e: open_link("https://space.bilibili.com/7243785"))
-
-        github_frame = tk.Frame(frame, bg="#2b2b2b")
-        github_frame.pack(anchor=tk.W, fill=tk.X, pady=2)
-        tk.Label(github_frame, text="GitHub：", bg="#2b2b2b", fg="#cccccc", font=('微软雅黑', 10)).pack(side=tk.LEFT)
-        github_link = tk.Label(github_frame, text="https://github.com/ITKouSyou/Stream-Mascot", bg="#2b2b2b", fg="#4b6eaf", font=('微软雅黑', 10, 'underline'), cursor="hand2")
-        github_link.pack(side=tk.LEFT)
-        github_link.bind("<Button-1>", lambda e: open_link("https://github.com/ITKouSyou/Stream-Mascot"))
-
-        # ================================
-
-        ttk.Label(frame, text="快捷键操作", style='Title.TLabel').pack(anchor=tk.W, pady=(15, 5))
-        shortcuts = [
-            "• 鼠标左键：拖拽桌宠 / 点击按钮",
-            "• 鼠标右键：呼出菜单",
-            "• F8 键：开启/关闭鼠标穿透",
-            "• Esc 键：退出程序"
-        ]
-        for s in shortcuts:
-            tk.Label(frame, text=s, bg="#2b2b2b", fg="#cccccc", font=('微软雅黑', 10)).pack(anchor=tk.W)
-
-    def trigger_action(self, action):
-        self.on_interact(action)
+    # ================= 数据读取与保存 =================
+    def load_profile_to_ui(self):
+        prof = self.cfg["profiles"][self.active_profile_name]
+        self.var_show_code_face.set(prof.get("show_code_face", True))
+        
+        char_path = prof.get("character_path", "")
+        self.lbl_char_path.config(text=char_path if char_path else "未选择", fg="#4b6eaf" if char_path else "#aaaaaa")
+        
+        for k, lbl in self.face_labels.items():
+            path = prof.get("expressions", {}).get(k, "")
+            lbl.config(text=path if path else "未选择", fg="#4b6eaf" if path else "#aaaaaa")
+            
+        self.rebuild_keywords_ui()
 
     def _write_config(self):
-        cfg = config.load_config()
-        cfg["scale"] = round(self.var_scale.get(), 1)
-        cfg["mic"]["enabled"] = self.var_mic_enabled.get()
-        cfg["mic"]["threshold"] = round(self.var_mic_threshold.get(), 2)
-        cfg["mic"]["mouth_speed"] = self.var_mouth_speed.get()
+        self.cfg["global"]["scale"] = round(self.var_scale.get(), 1)
+        self.cfg["global"]["mic"]["enabled"] = self.var_mic_enabled.get()
+        self.cfg["global"]["mic"]["threshold"] = round(self.var_mic_threshold.get(), 2)
         
-        new_keywords = {}
+        self.cfg["active_profile"] = self.profile_var.get()
+        prof = self.cfg["profiles"][self.active_profile_name]
+        prof["show_code_face"] = self.var_show_code_face.get()
+        
+        # 处理图片路径 (从临时缓存读取修改)
+        if hasattr(self, 'temp_images'):
+            for key, val in self.temp_images.items():
+                if key == "character_path":
+                    prof["character_path"] = val
+                elif key.startswith("expressions."):
+                    exp_key = key.split(".")[1]
+                    prof["expressions"][exp_key] = val
+                    
+        # 处理关键词
         for k, lb in self.listboxes.items():
-            new_keywords[k] = list(lb.get(0, tk.END))
-        cfg["keywords"] = new_keywords
+            prof["keywords"][k] = list(lb.get(0, tk.END))
 
-        with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-            json.dump(cfg, f, indent=2, ensure_ascii=False)
+        config.save_config(self.cfg)
 
     def apply_only(self):
         try:
             self._write_config()
-            messagebox.showinfo("保存成功", "配置已保存！下次启动或重新加载时生效。")
+            messagebox.showinfo("成功", "配置已保存！下次启动或重新加载时生效。")
         except Exception as e:
-            messagebox.showerror("保存失败", f"无法保存配置：{e}")
+            messagebox.showerror("错误", f"无法保存配置：{e}")
 
     def save_and_reload(self):
         try:
@@ -245,7 +348,7 @@ class SettingsWindow:
             self.root.destroy()
             self.on_save()
         except Exception as e:
-            messagebox.showerror("保存失败", f"无法保存配置：{e}")
+            messagebox.showerror("错误", f"无法保存配置：{e}")
 
     def show(self):
         self.root.mainloop()

@@ -1,8 +1,7 @@
 import ctypes
 try:
     ctypes.windll.shcore.SetProcessDpiAwareness(1)
-except Exception:
-    pass
+except Exception: pass
 
 import time
 import random
@@ -15,11 +14,11 @@ import threading
 import config
 from pynput import keyboard
 
-from config import BASE_WIDTH, BASE_HEIGHT, SCALE, FPS, CHARACTER_PATH, CFG
+from config import BASE_WIDTH, BASE_HEIGHT, SCALE, FPS, CFG
 from window_utils import set_window_transparent, move_window, get_window_pos, set_click_through
 from input_utils import start_listeners, stop_listeners, get_active_chars, get_input_state
 from audio_utils import start_mic, stop_mic, get_volume, MIC_ENABLED
-from renderer import load_custom_character, draw_background_and_cat, draw_mouse_hand, draw_keyboard_hand
+from renderer import load_image_by_path, draw_background_and_cat, draw_mouse_hand, draw_keyboard_hand
 from effects import ParticleSystem, ContextMenu
 from stt_utils import SpeechRecognizer
 from settings_ui import SettingsWindow
@@ -47,15 +46,31 @@ def main():
         if os.path.exists(path):
             font = pygame.font.Font(path, 20)
             break
-    if not font:
-        font = pygame.font.Font(None, 20)
+    if not font: font = pygame.font.Font(None, 20)
     
     screen = pygame.display.set_mode((config.WIDTH, config.HEIGHT), pygame.NOFRAME)
     pygame.display.set_caption("Stream-Mascot")
     set_window_transparent()
     canvas = pygame.Surface((BASE_WIDTH, BASE_HEIGHT))
 
-    char_image = load_custom_character(CHARACTER_PATH)
+    # 根据当前激活的方案加载资源
+    active_name = CFG["active_profile"]
+    active_profile = CFG["profiles"].get(active_name, CFG["profiles"]["默认白猫"])
+    
+    show_code_face = active_profile.get("show_code_face", True)
+    char_images = {}
+    
+    # 加载基础形象
+    if active_profile.get("character_path"):
+        img = load_image_by_path(active_profile["character_path"])
+        if img: char_images["normal"] = img
+        
+    # 加载自定义表情图片
+    for exp_name, path in active_profile.get("expressions", {}).items():
+        if path:
+            img = load_image_by_path(path)
+            if img: char_images[exp_name] = img
+
     mic_stream = start_mic()
     start_listeners()
 
@@ -102,12 +117,10 @@ def main():
             app.show()
         threading.Thread(target=run_ui, daemon=True).start()
 
-    # 从 config 中读取最新的词库
     def on_speech_recognized(text):
         text = text.replace(" ", "")
-        # 动态获取，确保用户在设置里改了词库能立刻反映（如果是重新读取了 config 的话）
-        # 但为了性能，我们直接读取模块中的 CFG 字典
-        keywords_dict = CFG.get("keywords", {})
+        # 动态读取当前方案的词库
+        keywords_dict = active_profile.get("keywords", {})
         for emotion, keywords in keywords_dict.items():
             for kw in keywords:
                 if kw in text:
@@ -142,33 +155,22 @@ def main():
                 running = False
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                 running = False
-            
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 logical_pos = (event.pos[0] / current_scale, event.pos[1] / current_scale)
-                
                 if event.button == 3 and not is_click_through:
-                    if active_menu:
-                        active_menu = None
+                    if active_menu: active_menu = None
                     else:
                         mx = min(logical_pos[0], BASE_WIDTH - 150)
                         my = min(logical_pos[1], BASE_HEIGHT - 150)
-                        options = [
-                            ("设置与互动", "settings"),
-                            ("重新加载桌宠", "reload"),
-                            ("退出程序", "quit")
-                        ]
+                        options = [("设置与互动", "settings"), ("重新加载桌宠", "reload"), ("退出程序", "quit")]
                         active_menu = ContextMenu(mx, my, options, font)
-                        
                 elif event.button == 1:
                     if active_menu:
                         action = active_menu.check_click(logical_pos)
                         if action:
-                            if action == "settings":
-                                open_settings()
-                            elif action == "reload":
-                                trigger_reload()
-                            elif action == "quit":
-                                running = False
+                            if action == "settings": open_settings()
+                            elif action == "reload": trigger_reload()
+                            elif action == "quit": running = False
                         active_menu = None
                     else:
                         if not is_click_through:
@@ -176,8 +178,7 @@ def main():
                             drag_start_global = win32api.GetCursorPos()
                             window_start_pos = get_window_pos()
             elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 1:
-                    is_dragging = False
+                if event.button == 1: is_dragging = False
             elif event.type == pygame.MOUSEMOTION:
                 if active_menu:
                     logical_pos = (event.pos[0] / current_scale, event.pos[1] / current_scale)
@@ -187,9 +188,7 @@ def main():
             toggle_click_through_flag = False
             is_click_through = not is_click_through
             set_click_through(is_click_through)
-            print(f"\n[状态切换] 鼠标穿透: {'开启' if is_click_through else '关闭'}")
-            if is_click_through:
-                active_menu = None
+            if is_click_through: active_menu = None
 
         if is_dragging and not is_click_through:
             dx = cur_x - drag_start_global[0]
@@ -217,12 +216,12 @@ def main():
         is_blinking = now < blink_until
 
         if MIC_ENABLED:
-            if get_volume() > CFG["mic"]["threshold"]:
+            if get_volume() > CFG["global"]["mic"]["threshold"]:
                 is_talking = True
                 last_talk_time = now
-            if now - last_talk_time < CFG["mic"]["release_time"]:
+            if now - last_talk_time < CFG["global"]["mic"]["release_time"]:
                 is_talking = True
-                mouth_open = (int(now * CFG["mic"]["mouth_speed"]) % 2 == 0)
+                mouth_open = (int(now * CFG["global"]["mic"]["mouth_speed"]) % 2 == 0)
             else:
                 is_talking = False
                 mouth_open = False
@@ -234,8 +233,8 @@ def main():
             particle_sys.emit(450, 300, count=1, color=(100, 200, 255), ptype="star")
 
         canvas.fill((255, 0, 255))
-
-        draw_background_and_cat(canvas, is_blinking, is_talking, mouth_open, char_image, current_expression)
+        # 核心：传入 char_images 字典和 show_code_face 开关
+        draw_background_and_cat(canvas, is_blinking, is_talking, is_typing, mouth_open, char_images, show_code_face, current_expression)
         draw_mouse_hand(canvas, current_hand_x, current_hand_y, is_clicking)
         draw_keyboard_hand(canvas, is_typing, active_chars, font)
         particle_sys.update_and_draw(canvas)

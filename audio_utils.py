@@ -8,7 +8,8 @@ except ImportError:
     HAS_AUDIO = False
     print("警告: 未安装 sounddevice 或 numpy，麦克风功能将被禁用。")
 
-MIC_ENABLED = CFG["mic"]["enabled"] and HAS_AUDIO
+# 【修复】从 global 字段下读取 mic 配置
+MIC_ENABLED = CFG["global"]["mic"]["enabled"] and HAS_AUDIO
 current_volume = 0.0
 
 def audio_callback(indata, frames, time_info, status):
@@ -33,7 +34,6 @@ def start_mic():
     if not MIC_ENABLED:
         return None
     try:
-        # 可以尝试修改 device 参数来切换麦克风，默认使用系统默认麦克风
         stream = sd.InputStream(callback=audio_callback, channels=1, samplerate=44100)
         stream.start()
         print("麦克风监听已启动")

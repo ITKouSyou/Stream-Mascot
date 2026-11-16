@@ -1,108 +1,176 @@
 {
-  "scale": 1.0,
-  "fps": 60,
-  "character_path": "",
-  "character_width": 180,
-  "mic": {
-    "enabled": true,
-    "threshold": 0.15,
-    "release_time": 0.2,
-    "mouth_speed": 10
+  "active_profile": "自定义角色",
+  "profiles": {
+    "默认白猫": {
+      "name": "默认白猫",
+      "character_path": "",
+      "show_code_face": true,
+      "expressions": {
+        "normal": "",
+        "heart": "",
+        "angry": "",
+        "cry": "",
+        "surprised": "",
+        "speechless": ""
+      },
+      "keywords": {
+        "heart": [
+          "谢谢",
+          "哇",
+          "爱你",
+          "喜欢",
+          "么么哒",
+          "牛逼"
+        ],
+        "angry": [
+          "靠",
+          "无语",
+          "生气",
+          "烦",
+          "傻逼",
+          "操",
+          "滚"
+        ],
+        "cry": [
+          "呜呜",
+          "哭",
+          "委屈",
+          "可怜",
+          "难过"
+        ],
+        "surprised": [
+          "卧槽",
+          "居然",
+          "竟然",
+          "妈呀",
+          "真的假的"
+        ],
+        "speechless": [
+          "服了",
+          "醉了",
+          "搞笑",
+          "离谱"
+        ]
+      }
+    },
+    "自定义角色": {
+      "name": "自定义角色",
+      "character_path": "custom_assets/微信图片_2026-09-16_161059_158.jpg",
+      "show_code_face": false,
+      "expressions": {
+        "normal": "",
+        "heart": "custom_assets/aixin.jpg",
+        "angry": "custom_assets/8798c3cec3fdfc0324d45489923f8794a4c22633.gif",
+        "cry": "custom_assets/kuku.jpg",
+        "surprised": "",
+        "speechless": ""
+      },
+      "keywords": {
+        "heart": [
+          "谢谢",
+          "哇",
+          "爱你",
+          "喜欢",
+          "么么哒",
+          "牛逼"
+        ],
+        "angry": [
+          "靠",
+          "无语",
+          "生气",
+          "烦",
+          "傻逼",
+          "操",
+          "滚"
+        ],
+        "cry": [
+          "呜呜",
+          "哭",
+          "委屈",
+          "可怜",
+          "难过"
+        ],
+        "surprised": [
+          "卧槽",
+          "居然",
+          "竟然",
+          "妈呀",
+          "真的假的"
+        ],
+        "speechless": [
+          "服了",
+          "醉了",
+          "搞笑",
+          "离谱"
+        ]
+      }
+    }
   },
-  "keywords": {
-    "heart": [
-      "谢谢",
-      "哇",
-      "爱你",
-      "喜欢",
-      "么么哒",
-      "牛逼"
-    ],
-    "angry": [
-      "靠",
-      "无语",
-      "生气",
-      "烦",
-      "傻逼",
-      "操",
-      "滚"
-    ],
-    "cry": [
-      "呜呜",
-      "哭",
-      "委屈",
-      "可怜",
-      "难过"
-    ],
-    "surprised": [
-      "卧槽",
-      "居然",
-      "竟然",
-      "妈呀",
-      "真的假的"
-    ],
-    "speechless": [
-      "服了",
-      "醉了",
-      "搞笑",
-      "离谱"
-    ]
-  },
-  "colors": {
-    "bg": [
-      255,
-      0,
-      255
-    ],
-    "desk": [
-      245,
-      245,
-      245
-    ],
-    "cat": [
-      255,
-      255,
-      255
-    ],
-    "outline": [
-      15,
-      15,
-      15
-    ],
-    "paw": [
-      255,
-      160,
-      170
-    ],
-    "mousepad": [
-      180,
-      180,
-      180
-    ],
-    "mouse": [
-      60,
-      60,
-      65
-    ],
-    "mouse_hl": [
-      255,
-      80,
-      80
-    ],
-    "key_base": [
-      45,
-      45,
-      50
-    ],
-    "key": [
-      75,
-      75,
-      80
-    ],
-    "key_hl": [
-      100,
-      200,
-      255
-    ]
+  "global": {
+    "scale": 1.0,
+    "fps": 60,
+    "mic": {
+      "enabled": true,
+      "threshold": 0.15,
+      "release_time": 0.2,
+      "mouth_speed": 5
+    },
+    "colors": {
+      "bg": [
+        255,
+        0,
+        255
+      ],
+      "desk": [
+        245,
+        245,
+        245
+      ],
+      "cat": [
+        255,
+        255,
+        255
+      ],
+      "outline": [
+        15,
+        15,
+        15
+      ],
+      "paw": [
+        255,
+        160,
+        170
+      ],
+      "mousepad": [
+        180,
+        180,
+        180
+      ],
+      "mouse": [
+        60,
+        60,
+        65
+      ],
+      "mouse_hl": [
+        255,
+        80,
+        80
+      ],
+      "key_base": [
+        45,
+        45,
+        50
+      ],
+      "key": [
+        75,
+        75,
+        80
+      ],
+      "key_hl": [
+        100,
+        200,
+        255
+      ]
+    }
   }
 }
