@@ -173,8 +173,17 @@ def main():
                 
             print("[系统] 软重载完成！")
 
-        wx, wy = get_window_pos()
-        cur_x, cur_y = win32api.GetCursorPos()
+        # ======== 安全获取鼠标坐标 ========
+        try:
+            wx, wy = get_window_pos()
+            cur_x, cur_y = win32api.GetCursorPos()
+        except Exception:
+            # 如果遇到高权限窗口（如全屏游戏）或锁屏，GetCursorPos 会拒绝访问
+            # 此时直接跳过这一帧的坐标更新，避免程序崩溃
+            pygame.display.flip()
+            clock.tick(FPS)
+            continue
+
         current_scale = config.CFG["global"]["scale"]
         
         for event in pygame.event.get():
@@ -202,8 +211,11 @@ def main():
                     else:
                         if not is_click_through:
                             is_dragging = True
-                            drag_start_global = win32api.GetCursorPos()
-                            window_start_pos = get_window_pos()
+                            try:
+                                drag_start_global = win32api.GetCursorPos()
+                                window_start_pos = get_window_pos()
+                            except Exception:
+                                is_dragging = False
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1: is_dragging = False
             elif event.type == pygame.MOUSEMOTION:

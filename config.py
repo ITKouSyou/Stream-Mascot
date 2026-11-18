@@ -2,7 +2,7 @@ import os
 import json
 
 # 项目版本号
-__version__ = "1.0.0"
+__version__ = "1.0.1"
 
 CONFIG_FILE = "config.json"
 CUSTOM_DIR = "custom_assets"
