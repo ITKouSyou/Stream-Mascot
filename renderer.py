@@ -12,7 +12,6 @@ from config import (
     COLOR_KEY_BASE, COLOR_KEY, COLOR_KEY_HL, CFG
 )
 
-# ---------------- 键盘布局数据 ----------------
 keys_data = []
 keys_data.append({"char": "SPACE", "rect": pygame.Rect(410, 250, 130, 24)})
 for i, char in enumerate("MNBVCXZ"):
@@ -87,8 +86,22 @@ def load_image_by_path(path, width=180):
         return None
 
 
+def draw_music_notes(surface, cx, cy, now):
+    """在头顶画飘动的音符"""
+    for i in range(3):
+        offset_x = math.sin(now * 5 + i) * 20
+        offset_y = (now * 40 + i * 40) % 100
+        alpha = max(0, 255 - offset_y * 2)
+        if alpha > 0:
+            color = (255, 100, 150, int(alpha))
+            temp = pygame.Surface((20, 20), pygame.SRCALPHA)
+            pygame.draw.circle(temp, color, (5, 15), 5)
+            pygame.draw.line(temp, color, (9, 12), (9, 0), 2)
+            pygame.draw.arc(temp, color, (5, 0, 10, 10), 0, 3.14, 2)
+            surface.blit(temp, (cx - 20 + offset_x + i*20, cy - 60 - offset_y))
+
+
 def draw_face_overlay(surface, cx, cy, is_blinking, is_talking, mouth_open, expression):
-    """自带的颜文字绘制系统"""
     eye_color = COLOR_OUTLINE
     pink = (255, 100, 150)
     l_eye = (cx - 50, cy + 5)
@@ -141,18 +154,24 @@ def draw_face_overlay(surface, cx, cy, is_blinking, is_talking, mouth_open, expr
             pygame.draw.lines(surface, eye_color, False, [(mouth_cx - 15, mouth_cy), (mouth_cx - 8, mouth_cy + 8), (mouth_cx, mouth_cy), (mouth_cx + 8, mouth_cy + 8), (mouth_cx + 15, mouth_cy)], 4)
 
 
-# 增加 is_typing 参数
-def draw_background_and_cat(surface, is_blinking, is_talking, is_typing, mouth_open, char_images, show_code_face, expression="normal"):
+def draw_background_and_cat(surface, is_blinking, is_talking, is_typing, is_singing, mouth_open, char_images, show_code_face, expression="normal"):
     now = time.time()
     offset = CFG.get("global", {}).get("character_offset", [300, 130])
     base_x, base_y = offset[0], offset[1]
     
-    idle_sway_x = math.sin(now * 2.0) * 3
-    idle_breath_y = math.sin(now * 1.5) * 1.5
-    angle = math.sin(now * 2.0) * 1.5
-    
-    active_bounce_y = 0
-    if is_talking:
+    # --- 动画参数 ---
+    if is_singing:
+        idle_sway_x = math.sin(now * 8.0) * 10
+        active_bounce_y = math.sin(now * 10) * 3
+        angle = math.sin(now * 8.0) * 8
+        idle_breath_y = 0
+    else:
+        idle_sway_x = math.sin(now * 2.0) * 3
+        idle_breath_y = math.sin(now * 1.5) * 1.5
+        active_bounce_y = 0
+        angle = math.sin(now * 2.0) * 1.5
+        
+    if is_talking and not is_singing:
         active_bounce_y = math.sin(now * 35) * 3.5 - 3 
         idle_sway_x = 0
         angle = 0
@@ -205,7 +224,17 @@ def draw_background_and_cat(surface, is_blinking, is_talking, is_typing, mouth_o
         show_code_face = True
 
     if show_code_face:
-        draw_face_overlay(char_layer, base_cx, base_cy, is_blinking, is_talking, mouth_open, expression)
+        if is_singing:
+            draw_face_overlay(char_layer, base_cx, base_cy, False, True, True, expression)
+            
+            # 【修复】把麦克风移到右下角，不再挡住嘴巴
+            mic_cx, mic_cy = base_cx + 30, base_cy + 25
+            pygame.draw.circle(char_layer, (60, 60, 60), (mic_cx, mic_cy), 10) # 麦克风头
+            pygame.draw.line(char_layer, (120, 120, 120), (mic_cx, mic_cy + 10), (mic_cx - 10, mic_cy + 25), 4) # 把手
+            
+            draw_music_notes(char_layer, base_cx, base_cy, now)
+        else:
+            draw_face_overlay(char_layer, base_cx, base_cy, is_blinking, is_talking, mouth_open, expression)
 
     if angle != 0:
         rotated_layer = pygame.transform.rotate(char_layer, angle)

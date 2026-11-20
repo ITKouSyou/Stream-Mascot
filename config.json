@@ -1,5 +1,5 @@
 {
-  "active_profile": "ITKouSyou",
+  "active_profile": "默认白猫",
   "profiles": {
     "默认白猫": {
       "name": "默认白猫",
@@ -163,9 +163,11 @@
     "fps": 60,
     "mic": {
       "enabled": true,
-      "threshold": 0.15,
+      "threshold": 0.25,
       "release_time": 0.2,
-      "mouth_speed": 5
+      "mouth_speed": 5,
+      "device_id": -1,
+      "denoise": true
     },
     "colors": {
       "bg": [
@@ -224,6 +226,7 @@
         255
       ]
     },
-    "always_on_top": true
+    "always_on_top": true,
+    "singing_sensitivity": 33.0
   }
 }

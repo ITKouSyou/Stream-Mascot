@@ -17,13 +17,12 @@ from pynput import keyboard
 from config import BASE_WIDTH, BASE_HEIGHT, SCALE, FPS, CFG
 from window_utils import set_window_transparent, move_window, get_window_pos, set_click_through
 from input_utils import start_listeners, stop_listeners, get_active_chars, get_input_state
-from audio_utils import start_mic, stop_mic, get_volume, MIC_ENABLED
+from audio_utils import start_mic, stop_mic, get_volume, get_is_singing, MIC_ENABLED, update_singing_state
 from renderer import load_image_by_path, draw_background_and_cat, draw_mouse_hand, draw_keyboard_hand
 from effects import ParticleSystem, ContextMenu
 from stt_utils import SpeechRecognizer
 from settings_ui import SettingsWindow
 
-# ================= 核心：去除平滑缩放产生的杂色边缘 =================
 def remove_scale_artifacts(surface):
     arr = pygame.surfarray.pixels3d(surface)
     mask = (arr[:, :, 0] > 180) & (arr[:, :, 2] > 180) & (arr[:, :, 1] < 100)
@@ -38,7 +37,6 @@ def main():
         global reload_requested
         reload_requested = True
 
-    # 打印版本信息
     print(f"====================================")
     print(f" 🐾 Stream-Mascot 直播桌宠 v{config.__version__}")
     print(f"====================================")
@@ -88,6 +86,9 @@ def main():
             stt.stop()
             
         def on_speech_recognized(text):
+            if get_is_singing():
+                return
+                
             text = text.replace(" ", "")
             keywords_dict = active_profile.get("keywords", {})
             for emotion, keywords in keywords_dict.items():
@@ -96,6 +97,12 @@ def main():
                         trigger_expression(emotion)
                         break
         stt = SpeechRecognizer(callback=on_speech_recognized)
+        
+        # 彻底重启麦克风
+        if mic_stream:
+            stop_mic(mic_stream)
+            time.sleep(0.3) 
+        mic_stream = start_mic()
 
     def trigger_expression(emotion):
         nonlocal current_expression, expression_end_time
@@ -123,7 +130,7 @@ def main():
             app.show()
         threading.Thread(target=run_ui, daemon=True).start()
 
-    mic_stream = start_mic()
+    # 【修复】删掉最外面的 start_mic()，统一由 load_assets_and_services 启动
     start_listeners()
     load_assets_and_services()
 
@@ -157,7 +164,6 @@ def main():
     running = True
 
     while running:
-        # ======== 软重载处理 ========
         if reload_requested:
             reload_requested = False
             print("\n[系统] 正在执行软重载...")
@@ -173,13 +179,10 @@ def main():
                 
             print("[系统] 软重载完成！")
 
-        # ======== 安全获取鼠标坐标 ========
         try:
             wx, wy = get_window_pos()
             cur_x, cur_y = win32api.GetCursorPos()
         except Exception:
-            # 如果遇到高权限窗口（如全屏游戏）或锁屏，GetCursorPos 会拒绝访问
-            # 此时直接跳过这一帧的坐标更新，避免程序崩溃
             pygame.display.flip()
             clock.tick(FPS)
             continue
@@ -256,12 +259,14 @@ def main():
 
         is_typing, is_clicking = get_input_state()
         active_chars = get_active_chars()
+        
+        update_singing_state()
+        singing_status = get_is_singing()
 
         if MIC_ENABLED:
             current_vol = get_volume()
             dynamic_threshold = config.CFG["global"]["mic"]["threshold"]
             
-            # 输入防干扰：打字/点击时阈值翻倍
             if is_typing or is_clicking:
                 dynamic_threshold *= 2.0
 
@@ -279,7 +284,10 @@ def main():
             particle_sys.emit(450, 300, count=1, color=(100, 200, 255), ptype="star")
 
         canvas.fill((255, 0, 255))
-        draw_background_and_cat(canvas, is_blinking, is_talking, is_typing, mouth_open, char_images, show_code_face, current_expression)
+        draw_background_and_cat(
+            canvas, is_blinking, is_talking, is_typing, 
+            singing_status, mouth_open, char_images, show_code_face, current_expression
+        )
         draw_mouse_hand(canvas, current_hand_x, current_hand_y, is_clicking)
         draw_keyboard_hand(canvas, is_typing, active_chars, font)
         particle_sys.update_and_draw(canvas)

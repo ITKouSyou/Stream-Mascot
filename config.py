@@ -1,13 +1,10 @@
 import os
 import json
 
-# 项目版本号
-__version__ = "1.0.1"
-
+__version__ = "1.1.0"
 CONFIG_FILE = "config.json"
 CUSTOM_DIR = "custom_assets"
 
-# 确保自定义素材文件夹存在
 if not os.path.exists(CUSTOM_DIR):
     os.makedirs(CUSTOM_DIR)
 
@@ -35,9 +32,12 @@ DEFAULT_CONFIG = {
     "global": {
         "scale": 1.0, 
         "fps": 60,
-        "always_on_top": True,  # 新增：默认开启窗口置顶
+        "always_on_top": True,
+        "singing_sensitivity": 50.0,
         "mic": {
             "enabled": True,
+            "device_id": -1,          # -1 表示跟随系统默认
+            "denoise": True,          # 是否开启降噪
             "threshold": 0.15,
             "release_time": 0.2,
             "mouth_speed": 10
@@ -57,9 +57,7 @@ def load_config():
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 user_cfg = json.load(f)
                 
-            # 兼容旧版配置结构迁移
             if "global" not in user_cfg:
-                print("检测到旧版配置文件，正在自动迁移...")
                 old_profile = {
                     "name": "默认白猫",
                     "character_path": user_cfg.get("character_path", ""),
@@ -74,6 +72,7 @@ def load_config():
                         "scale": user_cfg.get("scale", 1.0),
                         "fps": user_cfg.get("fps", 60),
                         "always_on_top": True,
+                        "singing_sensitivity": 20.0,
                         "mic": user_cfg.get("mic", DEFAULT_CONFIG["global"]["mic"]),
                         "colors": user_cfg.get("colors", DEFAULT_CONFIG["global"]["colors"])
                     }
@@ -82,9 +81,15 @@ def load_config():
                     json.dump(new_cfg, f, indent=2, ensure_ascii=False)
                 return new_cfg
             
-            # 兼容某些字段缺失的情况
+            # 兼容性补齐字段
             if "always_on_top" not in user_cfg["global"]:
                 user_cfg["global"]["always_on_top"] = True
+            if "singing_sensitivity" not in user_cfg["global"]:
+                user_cfg["global"]["singing_sensitivity"] = 50.0
+            if "device_id" not in user_cfg["global"]["mic"]:
+                user_cfg["global"]["mic"]["device_id"] = -1
+            if "denoise" not in user_cfg["global"]["mic"]:
+                user_cfg["global"]["mic"]["denoise"] = True
                 
             return user_cfg
         except Exception as e:
@@ -92,7 +97,6 @@ def load_config():
     else:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(DEFAULT_CONFIG, f, indent=2, ensure_ascii=False)
-        print(f"已生成默认配置文件 {CONFIG_FILE}")
     return DEFAULT_CONFIG
 
 CFG = load_config()

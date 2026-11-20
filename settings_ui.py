@@ -5,6 +5,7 @@ from tkinter import ttk, messagebox, filedialog, simpledialog
 import config
 import webbrowser
 import shutil
+from audio_utils import get_all_input_devices
 
 CONFIG_FILE = "config.json"
 
@@ -15,7 +16,7 @@ class SettingsWindow:
         
         self.cfg = config.load_config()
         self.active_profile_name = self.cfg["active_profile"]
-        self.temp_images = {} # 用于记录 UI 上的临时修改
+        self.temp_images = {}
         
         self.root = tk.Tk()
         self.root.title("Stream-Mascot 设置")
@@ -34,7 +35,6 @@ class SettingsWindow:
         style.configure('Title.TLabel', foreground='white', font=('微软雅黑', 12, 'bold'))
         style.configure('TCheckbutton', background='#2b2b2b', foreground='white', font=('微软雅黑', 10))
         
-        # --- 顶部方案管理 ---
         top_frame = tk.Frame(self.root, bg="#1e1e1e", pady=10, padx=10)
         top_frame.pack(fill=tk.X)
         
@@ -48,14 +48,12 @@ class SettingsWindow:
         tk.Button(top_frame, text="+ 新建", command=self.create_profile, bg="#4b6eaf", fg="white", relief="flat").pack(side=tk.LEFT, padx=5)
         tk.Button(top_frame, text="- 删除", command=self.delete_profile, bg="#a33", fg="white", relief="flat").pack(side=tk.LEFT)
 
-        # --- 底部保存按钮 ---
         btn_frame = tk.Frame(self.root, bg="#2b2b2b")
         btn_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
         tk.Button(btn_frame, text="仅保存（不重启）", command=self.apply_only, bg="#555555", fg="white", font=('微软雅黑', 10), relief="flat", width=15).pack(side=tk.LEFT)
         tk.Button(btn_frame, text="保存并重启", command=self.save_and_reload, bg="#4b6eaf", fg="white", font=('微软雅黑', 10, 'bold'), relief="flat", width=15).pack(side=tk.RIGHT)
         tk.Button(btn_frame, text="取消", command=self.root.destroy, bg="#555555", fg="white", font=('微软雅黑', 10), relief="flat", width=10).pack(side=tk.RIGHT, padx=10)
 
-        # --- 中间标签页 ---
         self.notebook = ttk.Notebook(self.root)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=5)
 
@@ -81,13 +79,11 @@ class SettingsWindow:
         self.load_profile_to_ui()
 
     def format_path(self, path):
-        """截断过长路径，保留头尾，方便用户查看"""
         if not path: return "未选择"
         if len(path) > 35:
             return path[:15] + "..." + path[-15:]
         return path
 
-    # ================= 方案管理逻辑 =================
     def on_profile_change(self, event=None):
         self.active_profile_name = self.profile_var.get()
         self.temp_images = {}
@@ -120,30 +116,75 @@ class SettingsWindow:
             self.profile_var.set(self.active_profile_name)
             self.on_profile_change()
 
-    # ================= UI 构建 =================
     def build_global_tab(self):
-        frame = ttk.Frame(self.tab_global, padding=15)
-        frame.pack(fill=tk.BOTH, expand=True)
+        # 【核心修复】加入 Canvas 和 Scrollbar 实现滚动
+        canvas = tk.Canvas(self.tab_global, bg="#2b2b2b", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(self.tab_global, orient="vertical", command=canvas.yview)
+        
+        # 绑定鼠标滚轮
+        canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
+        
+        # 包含所有控件的内部 Frame
+        scrollable_frame = ttk.Frame(canvas, padding=15)
+        scrollable_frame.bind(
+            "<Configure>",
+            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+        )
+        
+        canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        canvas.pack(side="left", fill="both", expand=True)
+        scrollbar.pack(side="right", fill="y")
+
         global_cfg = self.cfg["global"]
+        frame = scrollable_frame # 把原本加在 frame 上的控件都重定向到 scrollable_frame
 
         ttk.Label(frame, text="窗口缩放比例", style='Title.TLabel').pack(anchor=tk.W, pady=(10, 5))
-        ttk.Label(frame, text="解释：控制桌宠在屏幕上的显示大小，默认 1.0。修改后需重启才能看到变化。", wraplength=630).pack(anchor=tk.W)
+        ttk.Label(frame, text="解释：控制桌宠在屏幕上的显示大小，默认 1.0。修改后需重启才能看到变化。", wraplength=600).pack(anchor=tk.W)
         self.var_scale = tk.DoubleVar(value=global_cfg.get("scale", 1.0))
         tk.Scale(frame, variable=self.var_scale, from_=0.5, to=2.5, resolution=0.1, orient=tk.HORIZONTAL, 
                  bg="#2b2b2b", fg="white", highlightthickness=0, length=400).pack(anchor=tk.W, pady=5)
 
-        # === 新增：窗口置顶选项 ===
         self.var_always_on_top = tk.BooleanVar(value=global_cfg.get("always_on_top", True))
         ttk.Checkbutton(frame, text="窗口置顶显示 (取消勾选后，点击其他软件时桌宠会被盖住)", variable=self.var_always_on_top).pack(anchor=tk.W, pady=(10, 0))
 
-        ttk.Label(frame, text="麦克风触发阈值", style='Title.TLabel').pack(anchor=tk.W, pady=(20, 5))
-        ttk.Label(frame, text="解释：数值越小越容易触发说话动作，建议 0.1 - 0.25 之间。", wraplength=630).pack(anchor=tk.W)
+        # ===== 音频设备配置 =====
+        ttk.Label(frame, text="音频输入设备", style='Title.TLabel').pack(anchor=tk.W, pady=(15, 5))
+        ttk.Label(frame, text="解释：如果系统自动切换失效，可以在这里手动锁定你的麦克风。", wraplength=600).pack(anchor=tk.W)
+        
+        self.devices = get_all_input_devices()
+        device_names = [d[1] for d in self.devices]
+        self.var_device = tk.StringVar()
+        
+        current_dev_id = global_cfg["mic"].get("device_id", -1)
+        current_dev_name = "系统默认设备 (跟随 Windows 切换)"
+        for d_id, d_name in self.devices:
+            if d_id == current_dev_id:
+                current_dev_name = d_name
+                break
+        self.var_device.set(current_dev_name)
+        
+        self.device_combo = ttk.Combobox(frame, textvariable=self.var_device, values=device_names, state="readonly", width=60)
+        self.device_combo.pack(anchor=tk.W, pady=5)
+
+        self.var_denoise = tk.BooleanVar(value=global_cfg["mic"].get("denoise", True))
+        ttk.Checkbutton(frame, text="启用 AI 降噪 (过滤风扇等底噪，防止误触唱歌)", variable=self.var_denoise).pack(anchor=tk.W, pady=(5, 0))
+
+        ttk.Label(frame, text="麦克风触发阈值", style='Title.TLabel').pack(anchor=tk.W, pady=(15, 5))
+        ttk.Label(frame, text="解释：数值越小越容易触发嘴巴动作，建议 0.1 - 0.25 之间。", wraplength=600).pack(anchor=tk.W)
         self.var_mic_threshold = tk.DoubleVar(value=global_cfg["mic"]["threshold"])
         tk.Scale(frame, variable=self.var_mic_threshold, from_=0.01, to=0.5, resolution=0.01, orient=tk.HORIZONTAL, 
                  bg="#2b2b2b", fg="white", highlightthickness=0, length=400).pack(anchor=tk.W, pady=5)
 
+        ttk.Label(frame, text="唱歌判定灵敏度 (1-100)", style='Title.TLabel').pack(anchor=tk.W, pady=(15, 5))
+        ttk.Label(frame, text="解释：数值越大越容易触发唱歌摇摆。如果普通说话经常变成唱歌，请直接拉到 80-100。", wraplength=600).pack(anchor=tk.W)
+        self.var_singing_sens = tk.DoubleVar(value=global_cfg.get("singing_sensitivity", 50.0))
+        tk.Scale(frame, variable=self.var_singing_sens, from_=10.0, to=100.0, resolution=1.0, orient=tk.HORIZONTAL, 
+                 bg="#2b2b2b", fg="white", highlightthickness=0, length=400).pack(anchor=tk.W, pady=5)
+
         self.var_mic_enabled = tk.BooleanVar(value=global_cfg["mic"]["enabled"])
-        ttk.Checkbutton(frame, text="启用麦克风互动 (说话嘴型)", variable=self.var_mic_enabled).pack(anchor=tk.W, pady=(20, 0))
+        ttk.Checkbutton(frame, text="启用麦克风互动 (说话嘴型/唱歌摇摆)", variable=self.var_mic_enabled).pack(anchor=tk.W, pady=(15, 0))
 
     def build_char_tab(self):
         frame = ttk.Frame(self.tab_char, padding=15)
@@ -175,7 +216,6 @@ class SettingsWindow:
             lbl = tk.Label(sub, text="未选择", bg="#2b2b2b", fg="#aaaaaa", anchor="w")
             self.face_labels[key] = lbl
             
-            # 先 pack 右侧按钮，再 pack 左侧 Label
             tk.Button(sub, text="清除", command=lambda k=key: self.clear_face_image(k), bg="#555", fg="white", relief="flat").pack(side=tk.RIGHT, padx=5)
             tk.Button(sub, text="上传", command=lambda k=key, l=lbl: self.select_image(f"expressions.{k}", l), bg="#555", fg="white", relief="flat").pack(side=tk.RIGHT)
             
@@ -309,7 +349,6 @@ class SettingsWindow:
         gl.pack(side=tk.LEFT)
         gl.bind("<Button-1>", lambda e: open_link("https://github.com/ITKouSyou/Stream-Mascot"))
 
-    # ================= 数据读取与保存 =================
     def load_profile_to_ui(self):
         prof = self.cfg["profiles"][self.active_profile_name]
         self.var_show_code_face.set(prof.get("show_code_face", True))
@@ -325,9 +364,19 @@ class SettingsWindow:
 
     def _write_config(self):
         self.cfg["global"]["scale"] = round(self.var_scale.get(), 1)
-        self.cfg["global"]["always_on_top"] = self.var_always_on_top.get() # 保存置顶状态
+        self.cfg["global"]["always_on_top"] = self.var_always_on_top.get()
+        self.cfg["global"]["singing_sensitivity"] = round(self.var_singing_sens.get(), 1)
         self.cfg["global"]["mic"]["enabled"] = self.var_mic_enabled.get()
         self.cfg["global"]["mic"]["threshold"] = round(self.var_mic_threshold.get(), 2)
+        self.cfg["global"]["mic"]["denoise"] = self.var_denoise.get()
+        
+        selected_name = self.var_device.get()
+        selected_id = -1
+        for d_id, d_name in self.devices:
+            if d_name == selected_name:
+                selected_id = d_id
+                break
+        self.cfg["global"]["mic"]["device_id"] = selected_id
         
         self.cfg["active_profile"] = self.profile_var.get()
         prof = self.cfg["profiles"][self.active_profile_name]

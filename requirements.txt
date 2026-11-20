@@ -5,3 +5,5 @@ sounddevice>=0.4.6
 numpy>=1.24.0
 vosk>=0.3.45
 Pillow>=10.0.0
+librosa>=0.10.0
+noisereduce>=3.0.0
