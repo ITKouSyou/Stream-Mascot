@@ -161,13 +161,16 @@
   "global": {
     "scale": 1.0,
     "fps": 60,
+    "always_on_top": true,
+    "singing_sensitivity": 33.0,
+    "performance_mode": false,
     "mic": {
       "enabled": true,
+      "device_id": -1,
+      "denoise": true,
       "threshold": 0.25,
       "release_time": 0.2,
-      "mouth_speed": 5,
-      "device_id": -1,
-      "denoise": true
+      "mouth_speed": 5
     },
     "colors": {
       "bg": [
@@ -225,8 +228,6 @@
         200,
         255
       ]
-    },
-    "always_on_top": true,
-    "singing_sensitivity": 33.0
+    }
   }
 }

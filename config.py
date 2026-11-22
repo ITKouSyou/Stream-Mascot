@@ -1,7 +1,8 @@
 import os
 import json
+import copy
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 CONFIG_FILE = "config.json"
 CUSTOM_DIR = "custom_assets"
 
@@ -34,10 +35,11 @@ DEFAULT_CONFIG = {
         "fps": 60,
         "always_on_top": True,
         "singing_sensitivity": 50.0,
+        "performance_mode": False,  # 性能模式：不使用平滑缩放，大幅降低 CPU
         "mic": {
             "enabled": True,
-            "device_id": -1,          # -1 表示跟随系统默认
-            "denoise": True,          # 是否开启降噪
+            "device_id": -1,
+            "denoise": True,
             "threshold": 0.15,
             "release_time": 0.2,
             "mouth_speed": 10
@@ -51,53 +53,36 @@ DEFAULT_CONFIG = {
     }
 }
 
+def deep_merge(default, user):
+    """深度合并配置字典，防止用户误删字段导致崩溃"""
+    if not isinstance(user, dict) or not isinstance(default, dict):
+        return user if user is not None else default
+    result = copy.deepcopy(default)
+    for k, v in user.items():
+        if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+            result[k] = deep_merge(result[k], v)
+        else:
+            result[k] = v
+    return result
+
 def load_config():
     if os.path.exists(CONFIG_FILE):
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 user_cfg = json.load(f)
-                
-            if "global" not in user_cfg:
-                old_profile = {
-                    "name": "默认白猫",
-                    "character_path": user_cfg.get("character_path", ""),
-                    "show_code_face": user_cfg.get("show_code_face", True),
-                    "expressions": {"normal": "", "heart": "", "angry": "", "cry": "", "surprised": "", "speechless": ""},
-                    "keywords": user_cfg.get("keywords", DEFAULT_PROFILE["keywords"])
-                }
-                new_cfg = {
-                    "active_profile": "默认白猫",
-                    "profiles": {"默认白猫": old_profile},
-                    "global": {
-                        "scale": user_cfg.get("scale", 1.0),
-                        "fps": user_cfg.get("fps", 60),
-                        "always_on_top": True,
-                        "singing_sensitivity": 20.0,
-                        "mic": user_cfg.get("mic", DEFAULT_CONFIG["global"]["mic"]),
-                        "colors": user_cfg.get("colors", DEFAULT_CONFIG["global"]["colors"])
-                    }
-                }
-                with open(CONFIG_FILE, "w", encoding="utf-8") as f:
-                    json.dump(new_cfg, f, indent=2, ensure_ascii=False)
-                return new_cfg
-            
-            # 兼容性补齐字段
-            if "always_on_top" not in user_cfg["global"]:
-                user_cfg["global"]["always_on_top"] = True
-            if "singing_sensitivity" not in user_cfg["global"]:
-                user_cfg["global"]["singing_sensitivity"] = 50.0
-            if "device_id" not in user_cfg["global"]["mic"]:
-                user_cfg["global"]["mic"]["device_id"] = -1
-            if "denoise" not in user_cfg["global"]["mic"]:
-                user_cfg["global"]["mic"]["denoise"] = True
-                
-            return user_cfg
+            # 深度合并，自动补齐缺失字段
+            cfg = deep_merge(DEFAULT_CONFIG, user_cfg)
+            return cfg
         except Exception as e:
-            print(f"读取配置文件失败: {e}，将使用默认配置。")
+            print(f"⚠️ 配置文件损坏 ({e})，将使用默认配置并备份旧文件。")
+            try:
+                os.rename(CONFIG_FILE, CONFIG_FILE + ".bak")
+            except: pass
+            return copy.deepcopy(DEFAULT_CONFIG)
     else:
         with open(CONFIG_FILE, "w", encoding="utf-8") as f:
             json.dump(DEFAULT_CONFIG, f, indent=2, ensure_ascii=False)
-    return DEFAULT_CONFIG
+    return copy.deepcopy(DEFAULT_CONFIG)
 
 CFG = load_config()
 

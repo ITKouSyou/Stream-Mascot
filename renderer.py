@@ -11,6 +11,10 @@ from config import (
     COLOR_MOUSEPAD, COLOR_MOUSE, COLOR_MOUSE_HL,
     COLOR_KEY_BASE, COLOR_KEY, COLOR_KEY_HL, CFG
 )
+from expression_manager import ExpressionManager
+
+# 全局初始化一次表情管理器
+exp_manager = ExpressionManager()
 
 keys_data = []
 keys_data.append({"char": "SPACE", "rect": pygame.Rect(410, 250, 130, 24)})
@@ -22,7 +26,6 @@ for i, char in enumerate("POIUYTREWQ"):
     keys_data.append({"char": char, "rect": pygame.Rect(332 + i*26, 346, 22, 24)})
 for i, char in enumerate("0987654321"):
     keys_data.append({"char": char, "rect": pygame.Rect(318 + i*26, 378, 22, 24)})
-
 
 class GifPlayer:
     def __init__(self, frames, durations):
@@ -38,10 +41,8 @@ class GifPlayer:
             self.last_update = now
         return self.frames[self.current_frame]
 
-
 def load_image_by_path(path, width=180):
-    if not path:
-        return None
+    if not path: return None
     try:
         if path.lower().endswith('.gif'):
             with Image.open(path) as img:
@@ -52,14 +53,11 @@ def load_image_by_path(path, width=180):
                     bg_color = frame.getpixel((0, 0))
                     surf = pygame.image.fromstring(frame.tobytes(), frame.size, frame.mode).convert_alpha()
                     surf.set_colorkey(bg_color)
-                    
                     ratio = width / surf.get_width()
                     target_height = int(surf.get_height() * ratio)
                     surf = pygame.transform.smoothscale(surf, (width, target_height))
-                    
                     frames.append(surf)
                     durations.append(frame.info.get("duration", 100) / 1000.0)
-                
                 return GifPlayer(frames, durations)
         else:
             if path.startswith("http"):
@@ -68,15 +66,12 @@ def load_image_by_path(path, width=180):
                     image_data = response.read()
                 image = pygame.image.load(io.BytesIO(image_data))
             else:
-                if not os.path.exists(path):
-                    return None
+                if not os.path.exists(path): return None
                 image = pygame.image.load(path)
-                
             image = image.convert_alpha()
             if image.get_at((0, 0)).a == 255:  
                 bg_color = image.get_at((0, 0))
                 image.set_colorkey(bg_color)
-                
             ratio = width / image.get_width()
             target_height = int(image.get_height() * ratio)
             image = pygame.transform.smoothscale(image, (width, target_height))
@@ -85,9 +80,7 @@ def load_image_by_path(path, width=180):
         print(f"加载图片失败 ({path}): {e}")
         return None
 
-
 def draw_music_notes(surface, cx, cy, now):
-    """在头顶画飘动的音符"""
     for i in range(3):
         offset_x = math.sin(now * 5 + i) * 20
         offset_y = (now * 40 + i * 40) % 100
@@ -100,66 +93,11 @@ def draw_music_notes(surface, cx, cy, now):
             pygame.draw.arc(temp, color, (5, 0, 10, 10), 0, 3.14, 2)
             surface.blit(temp, (cx - 20 + offset_x + i*20, cy - 60 - offset_y))
 
-
-def draw_face_overlay(surface, cx, cy, is_blinking, is_talking, mouth_open, expression):
-    eye_color = COLOR_OUTLINE
-    pink = (255, 100, 150)
-    l_eye = (cx - 50, cy + 5)
-    r_eye = (cx + 50, cy + 5)
-    mouth_cx, mouth_cy = cx, cy + 10
-    
-    if expression == "heart":
-        for px, py in [l_eye, r_eye]:
-            pygame.draw.circle(surface, pink, (px - 4, py - 5), 6)
-            pygame.draw.circle(surface, pink, (px + 4, py - 5), 6)
-            pygame.draw.polygon(surface, pink, [(px - 10, py - 2), (px + 10, py - 2), (px, py + 10)])
-        pygame.draw.lines(surface, eye_color, False, [(mouth_cx - 15, mouth_cy), (mouth_cx - 8, mouth_cy + 8), (mouth_cx, mouth_cy), (mouth_cx + 8, mouth_cy + 8), (mouth_cx + 15, mouth_cy)], 4)
-    elif expression == "angry":
-        pygame.draw.line(surface, eye_color, (l_eye[0] - 10, l_eye[1] - 10), (l_eye[0] + 10, l_eye[1] + 3), 5)
-        pygame.draw.line(surface, eye_color, (r_eye[0] + 10, r_eye[1] - 10), (r_eye[0] - 10, r_eye[1] + 3), 5)
-        pygame.draw.line(surface, eye_color, (mouth_cx - 10, mouth_cy + 10), (mouth_cx + 10, mouth_cy + 10), 4)
-    elif expression == "cry":
-        pygame.draw.arc(surface, eye_color, (l_eye[0] - 10, l_eye[1] - 10, 20, 15), 3.14, 0, 3)
-        pygame.draw.arc(surface, eye_color, (r_eye[0] - 10, r_eye[1] - 10, 20, 15), 3.14, 0, 3)
-        pygame.draw.ellipse(surface, (100, 200, 255), (l_eye[0] - 5, l_eye[1] + 5, 6, 12))
-        pygame.draw.ellipse(surface, (100, 200, 255), (r_eye[0] - 5, r_eye[1] + 5, 6, 12))
-        pygame.draw.arc(surface, eye_color, (mouth_cx - 10, mouth_cy + 5, 10, 10), 3.14, 0, 3)
-        pygame.draw.arc(surface, eye_color, (mouth_cx, mouth_cy + 5, 10, 10), 0, 3.14, 3)
-    elif expression == "surprised":
-        pygame.draw.circle(surface, eye_color, l_eye, 10, 4)
-        pygame.draw.circle(surface, eye_color, r_eye, 10, 4)
-        pygame.draw.circle(surface, eye_color, (mouth_cx, mouth_cy + 10), 7, 3)
-    elif expression == "speechless":
-        pygame.draw.line(surface, eye_color, (l_eye[0] - 10, l_eye[1]), (l_eye[0] + 10, l_eye[1]), 4)
-        pygame.draw.line(surface, eye_color, (r_eye[0] - 10, r_eye[1]), (r_eye[0] + 10, r_eye[1]), 4)
-        pygame.draw.line(surface, eye_color, (mouth_cx - 10, mouth_cy + 5), (mouth_cx + 10, mouth_cy + 5), 3)
-        pygame.draw.ellipse(surface, (100, 200, 255), (r_eye[0] + 15, r_eye[1] - 25, 6, 12))
-    else:
-        if is_talking:
-            pygame.draw.arc(surface, eye_color, (l_eye[0] - 15, l_eye[1] - 10, 30, 20), 3.14, 0, 4)
-            pygame.draw.arc(surface, eye_color, (r_eye[0] - 15, r_eye[1] - 10, 30, 20), 3.14, 0, 4)
-            if mouth_open:
-                pygame.draw.ellipse(surface, eye_color, (mouth_cx - 15, mouth_cy + 5, 30, 22))
-                pygame.draw.ellipse(surface, (200, 80, 100), (mouth_cx - 12, mouth_cy + 8, 24, 16))
-                pygame.draw.ellipse(surface, COLOR_PAW, (mouth_cx - 7, mouth_cy + 15, 14, 7))
-            else:
-                pygame.draw.lines(surface, eye_color, False, [(mouth_cx - 15, mouth_cy), (mouth_cx - 8, mouth_cy + 8), (mouth_cx, mouth_cy), (mouth_cx + 8, mouth_cy + 8), (mouth_cx + 15, mouth_cy)], 4)
-        elif is_blinking:
-            pygame.draw.line(surface, eye_color, (l_eye[0] - 10, l_eye[1]), (l_eye[0] + 10, l_eye[1]), 4)
-            pygame.draw.line(surface, eye_color, (r_eye[0] - 10, r_eye[1]), (r_eye[0] + 10, r_eye[1]), 4)
-            pygame.draw.lines(surface, eye_color, False, [(mouth_cx - 15, mouth_cy), (mouth_cx - 8, mouth_cy + 8), (mouth_cx, mouth_cy), (mouth_cx + 8, mouth_cy + 8), (mouth_cx + 15, mouth_cy)], 4)
-        else:
-            pygame.draw.circle(surface, eye_color, l_eye, 7)
-            pygame.draw.circle(surface, eye_color, r_eye, 7)
-            pygame.draw.lines(surface, eye_color, False, [(mouth_cx - 15, mouth_cy), (mouth_cx - 8, mouth_cy + 8), (mouth_cx, mouth_cy), (mouth_cx + 8, mouth_cy + 8), (mouth_cx + 15, mouth_cy)], 4)
-
-
 def draw_background_and_cat(surface, is_blinking, is_talking, is_typing, is_singing, mouth_open, char_images, show_code_face, expression="normal"):
     now = time.time()
     offset = CFG.get("global", {}).get("character_offset", [300, 130])
     base_x, base_y = offset[0], offset[1]
     
-    # --- 动画参数 ---
     if is_singing:
         idle_sway_x = math.sin(now * 8.0) * 10
         active_bounce_y = math.sin(now * 10) * 3
@@ -225,16 +163,15 @@ def draw_background_and_cat(surface, is_blinking, is_talking, is_typing, is_sing
 
     if show_code_face:
         if is_singing:
-            draw_face_overlay(char_layer, base_cx, base_cy, False, True, True, expression)
-            
-            # 【修复】把麦克风移到右下角，不再挡住嘴巴
+            # 唱歌时强制笑脸
+            exp_manager.draw(char_layer, base_cx, base_cy, False, True, True, expression)
             mic_cx, mic_cy = base_cx + 30, base_cy + 25
-            pygame.draw.circle(char_layer, (60, 60, 60), (mic_cx, mic_cy), 10) # 麦克风头
-            pygame.draw.line(char_layer, (120, 120, 120), (mic_cx, mic_cy + 10), (mic_cx - 10, mic_cy + 25), 4) # 把手
-            
+            pygame.draw.circle(char_layer, (60, 60, 60), (mic_cx, mic_cy), 10)
+            pygame.draw.line(char_layer, (120, 120, 120), (mic_cx, mic_cy + 10), (mic_cx - 10, mic_cy + 25), 4)
             draw_music_notes(char_layer, base_cx, base_cy, now)
         else:
-            draw_face_overlay(char_layer, base_cx, base_cy, is_blinking, is_talking, mouth_open, expression)
+            # 调用外部表情管理器
+            exp_manager.draw(char_layer, base_cx, base_cy, is_blinking, is_talking, mouth_open, expression)
 
     if angle != 0:
         rotated_layer = pygame.transform.rotate(char_layer, angle)
@@ -246,7 +183,6 @@ def draw_background_and_cat(surface, is_blinking, is_talking, is_typing, is_sing
 
     pygame.draw.rect(surface, COLOR_DESK, (0, 240, 600, 160))
     pygame.draw.line(surface, COLOR_OUTLINE, (0, 240), (600, 240), 4)
-
 
 def draw_paw(surface, cx, cy, w, h, is_pressed, show_paw_pad=True):
     r = w // 2

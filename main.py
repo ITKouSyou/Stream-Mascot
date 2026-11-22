@@ -16,12 +16,13 @@ from pynput import keyboard
 
 from config import BASE_WIDTH, BASE_HEIGHT, SCALE, FPS, CFG
 from window_utils import set_window_transparent, move_window, get_window_pos, set_click_through
-from input_utils import start_listeners, stop_listeners, get_active_chars, get_input_state
+from input_utils import start_listeners, stop_listeners, get_active_chars, get_input_state, set_key_press_callback
 from audio_utils import start_mic, stop_mic, get_volume, get_is_singing, MIC_ENABLED, update_singing_state
 from renderer import load_image_by_path, draw_background_and_cat, draw_mouse_hand, draw_keyboard_hand
-from effects import ParticleSystem, ContextMenu
+from effects import ParticleSystem, ContextMenu, FloatingText
 from stt_utils import SpeechRecognizer
 from settings_ui import SettingsWindow
+from plugin_manager import PluginManager # 引入插件系统
 
 def remove_scale_artifacts(surface):
     arr = pygame.surfarray.pixels3d(surface)
@@ -63,6 +64,26 @@ def main():
     show_code_face = True
     stt = None
     mic_stream = None
+    floating_texts = []
+    particle_sys = ParticleSystem()
+
+    # ======== 初始化插件管理器 ========
+    plugin_mgr = PluginManager()
+    def plugin_trigger_expression(emotion):
+        trigger_expression(emotion)
+    
+    plugin_mgr.set_context({
+        "trigger_expression": plugin_trigger_expression,
+        "emit_particle": lambda x, y, count, color, ptype: particle_sys.emit(x, y, count, color, ptype),
+        "emit_text": lambda text: floating_texts.append(FloatingText(text, BASE_WIDTH//2, BASE_HEIGHT//2, 1.5))
+    })
+    plugin_mgr.load_plugins()
+    # ==================================
+
+    def on_plugin_key_press(key_id):
+        plugin_mgr.trigger_event("key_press", {"key": key_id})
+    
+    set_key_press_callback(on_plugin_key_press)
 
     def load_assets_and_services():
         nonlocal char_images, show_code_face, stt, mic_stream
@@ -95,10 +116,11 @@ def main():
                 for kw in keywords:
                     if kw in text:
                         trigger_expression(emotion)
+                        # 广播语音事件
+                        plugin_mgr.trigger_event("voice_trigger", {"text": text, "emotion": emotion})
                         break
         stt = SpeechRecognizer(callback=on_speech_recognized)
         
-        # 彻底重启麦克风
         if mic_stream:
             stop_mic(mic_stream)
             time.sleep(0.3) 
@@ -130,7 +152,6 @@ def main():
             app.show()
         threading.Thread(target=run_ui, daemon=True).start()
 
-    # 【修复】删掉最外面的 start_mic()，统一由 load_assets_and_services 启动
     start_listeners()
     load_assets_and_services()
 
@@ -145,7 +166,6 @@ def main():
     
     current_expression = "normal"
     expression_end_time = 0.0
-    particle_sys = ParticleSystem()
     active_menu = None
     
     is_click_through = False
@@ -162,22 +182,13 @@ def main():
 
     clock = pygame.time.Clock()
     running = True
+    
+    was_singing = False # 用于检测唱歌状态变化
 
     while running:
         if reload_requested:
-            reload_requested = False
-            print("\n[系统] 正在执行软重载...")
-            load_assets_and_services()
-            
-            new_w = int(BASE_WIDTH * config.CFG["global"]["scale"])
-            new_h = int(BASE_HEIGHT * config.CFG["global"]["scale"])
-            if new_w != config.WIDTH or new_h != config.HEIGHT:
-                config.WIDTH, config.HEIGHT = new_w, new_h
-                config.SCALE = config.CFG["global"]["scale"]
-                screen = pygame.display.set_mode((new_w, new_h), pygame.NOFRAME)
-                set_window_transparent()
-                
-            print("[系统] 软重载完成！")
+            running = False
+            break
 
         try:
             wx, wy = get_window_pos()
@@ -202,7 +213,9 @@ def main():
                         mx = min(logical_pos[0], BASE_WIDTH - 150)
                         my = min(logical_pos[1], BASE_HEIGHT - 150)
                         options = [("设置与互动", "settings"), ("重新加载桌宠", "reload"), ("退出程序", "quit")]
-                        active_menu = ContextMenu(mx, my, options, font)
+                        screen_w = win32api.GetSystemMetrics(0)
+                        screen_h = win32api.GetSystemMetrics(1)
+                        active_menu = ContextMenu(mx, my, options, font, screen_w, screen_h, wx, wy)
                 elif event.button == 1:
                     if active_menu:
                         action = active_menu.check_click(logical_pos)
@@ -231,6 +244,9 @@ def main():
             is_click_through = not is_click_through
             set_click_through(is_click_through)
             if is_click_through: active_menu = None
+            
+            msg = "穿透已开启" if is_click_through else "穿透已关闭"
+            floating_texts.append(FloatingText(msg, BASE_WIDTH//2, BASE_HEIGHT//2, 1.5))
 
         if is_dragging and not is_click_through:
             dx = cur_x - drag_start_global[0]
@@ -260,8 +276,16 @@ def main():
         is_typing, is_clicking = get_input_state()
         active_chars = get_active_chars()
         
-        update_singing_state()
+        update_singing_state(is_typing, is_clicking)
         singing_status = get_is_singing()
+        
+        # 广播唱歌状态事件
+        if singing_status and not was_singing:
+            plugin_mgr.trigger_event("sing_start")
+            was_singing = True
+        elif not singing_status and was_singing:
+            plugin_mgr.trigger_event("sing_stop")
+            was_singing = False
 
         if MIC_ENABLED:
             current_vol = get_volume()
@@ -292,13 +316,19 @@ def main():
         draw_keyboard_hand(canvas, is_typing, active_chars, font)
         particle_sys.update_and_draw(canvas)
         
+        floating_texts = [t for t in floating_texts if t.update_and_draw(canvas, font)]
+        
         if active_menu:
             active_menu.draw(canvas, font)
 
         if current_scale != 1.0:
-            scaled_canvas = pygame.transform.smoothscale(canvas, (config.WIDTH, config.HEIGHT))
-            remove_scale_artifacts(scaled_canvas)
-            screen.blit(scaled_canvas, (0, 0))
+            if config.CFG["global"].get("performance_mode", False):
+                scaled_canvas = pygame.transform.scale(canvas, (config.WIDTH, config.HEIGHT))
+                screen.blit(scaled_canvas, (0, 0))
+            else:
+                scaled_canvas = pygame.transform.smoothscale(canvas, (config.WIDTH, config.HEIGHT))
+                remove_scale_artifacts(scaled_canvas)
+                screen.blit(scaled_canvas, (0, 0))
         else:
             screen.blit(canvas, (0, 0))
 
@@ -310,6 +340,10 @@ def main():
     hotkey_listener.stop()
     if stt: stt.stop()
     pygame.quit()
+
+    if reload_requested:
+        print("\n[系统] 正在执行彻底重载...")
+        os.execl(sys.executable, sys.executable, *sys.argv)
 
 if __name__ == "__main__":
     main()

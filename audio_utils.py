@@ -31,34 +31,26 @@ _last_data_time = time.time()
 
 _last_calc_time = 0.0
 _sing_counter = 0
+_last_sing_time = 0.0
 
 _state_lock = threading.Lock()
 
 def get_all_input_devices():
-    """获取所有可用的输入设备列表，过滤冗余并去重"""
     if not HAS_AUDIO: return [(-1, "系统默认设备")]
     try:
         devices = sd.query_devices()
         result = [(-1, "系统默认设备 (跟随 Windows 切换)")]
         seen_names = set()
-        
-        # 忽略的系统级虚拟驱动和重复项
-        ignore_keywords = [
-            "Microsoft 声音映射器", "主声音捕获驱动程序", 
-            "Sound Mapper", "Primary Sound Capture", 
-            "默认", "Default"
-        ]
+        ignore_keywords = ["Microsoft 声音映射器", "主声音捕获驱动程序", "Sound Mapper", "Primary Sound Capture", "默认", "Default"]
         
         for i, d in enumerate(devices):
             if d['max_input_channels'] > 0:
                 name = d['name']
                 if any(kw in name for kw in ignore_keywords):
                     continue
-                # 去重
                 if name not in seen_names:
                     seen_names.add(name)
                     result.append((i, name))
-                    
         return result
     except Exception:
         return [(-1, "系统默认设备")]
@@ -128,7 +120,6 @@ def _audio_manager(stop_event):
             try:
                 _stream = sd.InputStream(device=actual_device, callback=audio_callback, channels=1, samplerate=44100, blocksize=1024)
                 _stream.start()
-                
                 _current_device_name = device_name
                 print(f"[音频系统] 麦克风监听已启动，当前设备: {_current_device_name}")
                 _last_data_time = time.time()
@@ -206,19 +197,27 @@ def stop_mic(stream_thread):
 def get_volume():
     return current_volume
 
-def update_singing_state():
-    global is_singing, _last_calc_time, _sing_counter, _audio_buffer
+def update_singing_state(is_typing, is_clicking):
+    global is_singing, _last_calc_time, _sing_counter, _audio_buffer, _last_sing_time
     
     if _stream is None or not HAS_LIBROSA or not MIC_ENABLED:
         with _state_lock:
-            _sing_counter = max(_sing_counter - 2, 0)
-            is_singing = _sing_counter >= 6
+            _sing_counter = 0
+            is_singing = False
         return
 
     now = time.time()
-    if now - _last_calc_time < 0.15: return
+    # 1. 节流限制（每 0.5 秒算一次）
+    if now - _last_calc_time < 0.5: return
     _last_calc_time = now
     
+    # 2. 正在打字或点击时直接忽略，防止杂音
+    if is_typing or is_clicking:
+        with _state_lock:
+            _sing_counter = max(_sing_counter - 1, 0)
+            if _sing_counter < 6: is_singing = False
+        return
+
     sensitivity = config.CFG["global"].get("singing_sensitivity", 50.0)
     use_denoise = config.CFG["global"]["mic"].get("denoise", True)
     
@@ -250,6 +249,7 @@ def update_singing_state():
                 with _state_lock:
                     if stable_ratio > required_ratio:
                         _sing_counter = min(_sing_counter + 2, 12)
+                        _last_sing_time = now
                     else:
                         _sing_counter = max(_sing_counter - 2, 0)
         except Exception:
@@ -257,8 +257,12 @@ def update_singing_state():
     else:
         with _state_lock:
             _sing_counter = max(_sing_counter - 2, 0)
-        
+            
+    # 【核心修复】超时强制重置，防止状态卡死
     with _state_lock:
+        if now - _last_sing_time > 1.5:
+            _sing_counter = 0
+            
         is_singing = _sing_counter >= 6
 
 def get_is_singing():

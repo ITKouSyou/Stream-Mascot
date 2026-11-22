@@ -50,8 +50,8 @@ class SettingsWindow:
 
         btn_frame = tk.Frame(self.root, bg="#2b2b2b")
         btn_frame.pack(side=tk.BOTTOM, fill=tk.X, padx=10, pady=10)
-        tk.Button(btn_frame, text="仅保存（不重启）", command=self.apply_only, bg="#555555", fg="white", font=('微软雅黑', 10), relief="flat", width=15).pack(side=tk.LEFT)
-        tk.Button(btn_frame, text="保存并重启", command=self.save_and_reload, bg="#4b6eaf", fg="white", font=('微软雅黑', 10, 'bold'), relief="flat", width=15).pack(side=tk.RIGHT)
+        tk.Button(btn_frame, text="仅保存（下次生效）", command=self.apply_only, bg="#555555", fg="white", font=('微软雅黑', 10), relief="flat", width=15).pack(side=tk.LEFT)
+        tk.Button(btn_frame, text="保存并重启程序", command=self.save_and_reload, bg="#4b6eaf", fg="white", font=('微软雅黑', 10, 'bold'), relief="flat", width=15).pack(side=tk.RIGHT)
         tk.Button(btn_frame, text="取消", command=self.root.destroy, bg="#555555", fg="white", font=('微软雅黑', 10), relief="flat", width=10).pack(side=tk.RIGHT, padx=10)
 
         self.notebook = ttk.Notebook(self.root)
@@ -117,19 +117,12 @@ class SettingsWindow:
             self.on_profile_change()
 
     def build_global_tab(self):
-        # 【核心修复】加入 Canvas 和 Scrollbar 实现滚动
         canvas = tk.Canvas(self.tab_global, bg="#2b2b2b", highlightthickness=0)
         scrollbar = ttk.Scrollbar(self.tab_global, orient="vertical", command=canvas.yview)
-        
-        # 绑定鼠标滚轮
         canvas.bind_all("<MouseWheel>", lambda e: canvas.yview_scroll(int(-1*(e.delta/120)), "units"))
         
-        # 包含所有控件的内部 Frame
         scrollable_frame = ttk.Frame(canvas, padding=15)
-        scrollable_frame.bind(
-            "<Configure>",
-            lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
-        )
+        scrollable_frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
         
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
@@ -138,7 +131,7 @@ class SettingsWindow:
         scrollbar.pack(side="right", fill="y")
 
         global_cfg = self.cfg["global"]
-        frame = scrollable_frame # 把原本加在 frame 上的控件都重定向到 scrollable_frame
+        frame = scrollable_frame
 
         ttk.Label(frame, text="窗口缩放比例", style='Title.TLabel').pack(anchor=tk.W, pady=(10, 5))
         ttk.Label(frame, text="解释：控制桌宠在屏幕上的显示大小，默认 1.0。修改后需重启才能看到变化。", wraplength=600).pack(anchor=tk.W)
@@ -149,9 +142,14 @@ class SettingsWindow:
         self.var_always_on_top = tk.BooleanVar(value=global_cfg.get("always_on_top", True))
         ttk.Checkbutton(frame, text="窗口置顶显示 (取消勾选后，点击其他软件时桌宠会被盖住)", variable=self.var_always_on_top).pack(anchor=tk.W, pady=(10, 0))
 
-        # ===== 音频设备配置 =====
+        self.var_performance = tk.BooleanVar(value=global_cfg.get("performance_mode", False))
+        ttk.Checkbutton(frame, text="开启性能模式 (降低画质避免卡顿，适合配置较低的电脑)", variable=self.var_performance).pack(anchor=tk.W, pady=(5, 0))
+
         ttk.Label(frame, text="音频输入设备", style='Title.TLabel').pack(anchor=tk.W, pady=(15, 5))
         ttk.Label(frame, text="解释：如果系统自动切换失效，可以在这里手动锁定你的麦克风。", wraplength=600).pack(anchor=tk.W)
+        
+        dev_frame = tk.Frame(frame, bg="#2b2b2b")
+        dev_frame.pack(anchor=tk.W, fill=tk.X, pady=5)
         
         self.devices = get_all_input_devices()
         device_names = [d[1] for d in self.devices]
@@ -165,8 +163,11 @@ class SettingsWindow:
                 break
         self.var_device.set(current_dev_name)
         
-        self.device_combo = ttk.Combobox(frame, textvariable=self.var_device, values=device_names, state="readonly", width=60)
-        self.device_combo.pack(anchor=tk.W, pady=5)
+        self.device_combo = ttk.Combobox(dev_frame, textvariable=self.var_device, values=device_names, state="readonly", width=50)
+        self.device_combo.pack(side=tk.LEFT, padx=(0, 10))
+        
+        # 刷新设备按钮
+        tk.Button(dev_frame, text="刷新设备", command=self.refresh_devices, bg="#4b6eaf", fg="white", relief="flat").pack(side=tk.LEFT)
 
         self.var_denoise = tk.BooleanVar(value=global_cfg["mic"].get("denoise", True))
         ttk.Checkbutton(frame, text="启用 AI 降噪 (过滤风扇等底噪，防止误触唱歌)", variable=self.var_denoise).pack(anchor=tk.W, pady=(5, 0))
@@ -185,6 +186,12 @@ class SettingsWindow:
 
         self.var_mic_enabled = tk.BooleanVar(value=global_cfg["mic"]["enabled"])
         ttk.Checkbutton(frame, text="启用麦克风互动 (说话嘴型/唱歌摇摆)", variable=self.var_mic_enabled).pack(anchor=tk.W, pady=(15, 0))
+
+    def refresh_devices(self):
+        self.devices = get_all_input_devices()
+        device_names = [d[1] for d in self.devices]
+        self.device_combo['values'] = device_names
+        messagebox.showinfo("提示", "设备列表已刷新！")
 
     def build_char_tab(self):
         frame = ttk.Frame(self.tab_char, padding=15)
@@ -365,6 +372,7 @@ class SettingsWindow:
     def _write_config(self):
         self.cfg["global"]["scale"] = round(self.var_scale.get(), 1)
         self.cfg["global"]["always_on_top"] = self.var_always_on_top.get()
+        self.cfg["global"]["performance_mode"] = self.var_performance.get()
         self.cfg["global"]["singing_sensitivity"] = round(self.var_singing_sens.get(), 1)
         self.cfg["global"]["mic"]["enabled"] = self.var_mic_enabled.get()
         self.cfg["global"]["mic"]["threshold"] = round(self.var_mic_threshold.get(), 2)
