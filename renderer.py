@@ -56,6 +56,7 @@ def load_image_by_path(path, width=180):
                     ratio = width / surf.get_width()
                     target_height = int(surf.get_height() * ratio)
                     surf = pygame.transform.smoothscale(surf, (width, target_height))
+                    surf.set_colorkey(bg_color)   # 缩放后重新设
                     frames.append(surf)
                     durations.append(frame.info.get("duration", 100) / 1000.0)
                 return GifPlayer(frames, durations)

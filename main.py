@@ -22,7 +22,7 @@ from renderer import load_image_by_path, draw_background_and_cat, draw_mouse_han
 from effects import ParticleSystem, ContextMenu, FloatingText
 from stt_utils import SpeechRecognizer
 from settings_ui import SettingsWindow
-from plugin_manager import PluginManager # 引入插件系统
+from plugin_manager import PluginManager
 
 def remove_scale_artifacts(surface):
     arr = pygame.surfarray.pixels3d(surface)
@@ -44,6 +44,7 @@ def main():
     print(f"作者: ITKouSyou")
     print(f"GitHub: https://github.com/ITKouSyou/Stream-Mascot\n")
 
+    # --- 全局初始化 (只执行一次) ---
     pygame.init()
     pygame.font.init()
     
@@ -60,34 +61,34 @@ def main():
     set_window_transparent()
     canvas = pygame.Surface((BASE_WIDTH, BASE_HEIGHT))
 
-    char_images = {}
-    show_code_face = True
-    stt = None
-    mic_stream = None
-    floating_texts = []
-    particle_sys = ParticleSystem()
-
-    # ======== 初始化插件管理器 ========
+    # 全局监听器、快捷键、插件只启动一次
+    start_listeners()
+    
     plugin_mgr = PluginManager()
     def plugin_trigger_expression(emotion):
+        # 采用函数引用，因为 particle_sys 在循环里会变
         trigger_expression(emotion)
     
-    plugin_mgr.set_context({
-        "trigger_expression": plugin_trigger_expression,
-        "emit_particle": lambda x, y, count, color, ptype: particle_sys.emit(x, y, count, color, ptype),
-        "emit_text": lambda text: floating_texts.append(FloatingText(text, BASE_WIDTH//2, BASE_HEIGHT//2, 1.5))
-    })
-    plugin_mgr.load_plugins()
-    # ==================================
-
     def on_plugin_key_press(key_id):
         plugin_mgr.trigger_event("key_press", {"key": key_id})
-    
     set_key_press_callback(on_plugin_key_press)
 
-    def load_assets_and_services():
-        nonlocal char_images, show_code_face, stt, mic_stream
+    toggle_click_through_flag = False
+    def on_hotkey_press(key):
+        nonlocal toggle_click_through_flag
+        if key == keyboard.Key.f8:
+            toggle_click_through_flag = True
+    hotkey_listener = keyboard.Listener(on_press=on_hotkey_press)
+    hotkey_listener.daemon = True
+    hotkey_listener.start()
+
+    # --- 重载外层循环 ---
+    first_run = True
+    while first_run or reload_requested:
+        first_run = False
+        reload_requested = False
         
+        # 每次重载时重新读取配置、加载资源、启动服务
         config.CFG = config.load_config()
         active_name = config.CFG["active_profile"]
         active_profile = config.CFG["profiles"].get(active_name, config.CFG["profiles"]["默认白猫"])
@@ -103,247 +104,246 @@ def main():
                 img = load_image_by_path(path)
                 if img: char_images[exp_name] = img
                 
-        if stt:
-            stt.stop()
+        # 重置外部状态
+        particle_sys = ParticleSystem()
+        floating_texts = []
+        active_menu = None
+        current_expression = "normal"
+        expression_end_time = 0.0
+        
+        is_dragging = False
+        drag_start_global = (0, 0)
+        window_start_pos = (0, 0)
+        
+        next_blink = time.time() + random.uniform(2, 5)
+        blink_until = 0.0
+        current_hand_x, current_hand_y = 115, 297
+        is_talking, last_talk_time, mouth_open = False, 0.0, False
+        is_click_through = False
+        was_singing = False
+        
+        # 定义内部触发函数，绑定当前的 particle_sys
+        def trigger_expression(emotion):
+            nonlocal current_expression, expression_end_time
+            current_expression = emotion
             
+            if emotion == "heart":
+                particle_sys.emit(300, 100, count=15, color=(255, 100, 150), ptype="heart")
+                expression_end_time = time.time() + 3.0
+            elif emotion == "angry":
+                particle_sys.emit(300, 100, count=5, color=(255, 50, 50), ptype="star")
+                expression_end_time = time.time() + 3.0
+            elif emotion == "cry":
+                particle_sys.emit(300, 100, count=8, color=(100, 200, 255), ptype="star")
+                expression_end_time = time.time() + 3.0
+            elif emotion in ["surprised", "speechless"]:
+                expression_end_time = time.time() + 3.0
+            else:
+                expression_end_time = 0
+
+        # 设置插件上下文
+        plugin_mgr.set_context({
+            "trigger_expression": lambda e: trigger_expression(e),
+            "emit_particle": lambda x, y, count, color, ptype: particle_sys.emit(x, y, count, color, ptype),
+            "emit_text": lambda text: floating_texts.append(FloatingText(text, BASE_WIDTH//2, BASE_HEIGHT//2, 1.5))
+        })
+        if first_run:
+            plugin_mgr.load_plugins()
+
+        # 启动语音识别
         def on_speech_recognized(text):
             if get_is_singing():
                 return
-                
             text = text.replace(" ", "")
             keywords_dict = active_profile.get("keywords", {})
             for emotion, keywords in keywords_dict.items():
                 for kw in keywords:
                     if kw in text:
                         trigger_expression(emotion)
-                        # 广播语音事件
                         plugin_mgr.trigger_event("voice_trigger", {"text": text, "emotion": emotion})
                         break
         stt = SpeechRecognizer(callback=on_speech_recognized)
         
-        if mic_stream:
-            stop_mic(mic_stream)
-            time.sleep(0.3) 
+        # 重启麦克风监听
         mic_stream = start_mic()
 
-    def trigger_expression(emotion):
-        nonlocal current_expression, expression_end_time
-        current_expression = emotion
+        # 打开设置窗口的函数
+        def open_settings():
+            nonlocal active_menu
+            active_menu = None
+            def run_ui():
+                app = SettingsWindow(on_save_callback=trigger_reload, on_interact_callback=trigger_expression)
+                app.show()
+            threading.Thread(target=run_ui, daemon=True).start()
+
+        clock = pygame.time.Clock()
+        running = True
         
-        if emotion == "heart":
-            particle_sys.emit(300, 100, count=15, color=(255, 100, 150), ptype="heart")
-            expression_end_time = time.time() + 3.0
-        elif emotion == "angry":
-            particle_sys.emit(300, 100, count=5, color=(255, 50, 50), ptype="star")
-            expression_end_time = time.time() + 3.0
-        elif emotion == "cry":
-            particle_sys.emit(300, 100, count=8, color=(100, 200, 255), ptype="star")
-            expression_end_time = time.time() + 3.0
-        elif emotion in ["surprised", "speechless"]:
-            expression_end_time = time.time() + 3.0
-        else:
-            expression_end_time = 0
+        # --- 内层主循环 (渲染与交互) ---
+        while running:
+            if reload_requested:
+                running = False
+                break
 
-    def open_settings():
-        nonlocal active_menu
-        active_menu = None
-        def run_ui():
-            app = SettingsWindow(on_save_callback=trigger_reload, on_interact_callback=trigger_expression)
-            app.show()
-        threading.Thread(target=run_ui, daemon=True).start()
+            try:
+                wx, wy = get_window_pos()
+                cur_x, cur_y = win32api.GetCursorPos()
+            except Exception:
+                pygame.display.flip()
+                clock.tick(FPS)
+                continue
 
-    start_listeners()
-    load_assets_and_services()
+            current_scale = config.CFG["global"]["scale"]
+            
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                    reload_requested = False # 用户主动关闭，不重载
+                elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
+                    running = False
+                    reload_requested = False
+                elif event.type == pygame.MOUSEBUTTONDOWN:
+                    logical_pos = (event.pos[0] / current_scale, event.pos[1] / current_scale)
+                    if event.button == 3 and not is_click_through:
+                        if active_menu: active_menu = None
+                        else:
+                            mx = min(logical_pos[0], BASE_WIDTH - 150)
+                            my = min(logical_pos[1], BASE_HEIGHT - 150)
+                            options = [("设置与互动", "settings"), ("重新加载桌宠", "reload"), ("退出程序", "quit")]
+                            screen_w = win32api.GetSystemMetrics(0)
+                            screen_h = win32api.GetSystemMetrics(1)
+                            active_menu = ContextMenu(mx, my, options, font, screen_w, screen_h, wx, wy)
+                    elif event.button == 1:
+                        if active_menu:
+                            action = active_menu.check_click(logical_pos)
+                            if action:
+                                if action == "settings": open_settings()
+                                elif action == "reload": trigger_reload()
+                                elif action == "quit": 
+                                    running = False
+                                    reload_requested = False
+                            active_menu = None
+                        else:
+                            if not is_click_through:
+                                is_dragging = True
+                                try:
+                                    drag_start_global = win32api.GetCursorPos()
+                                    window_start_pos = get_window_pos()
+                                except Exception:
+                                    is_dragging = False
+                elif event.type == pygame.MOUSEBUTTONUP:
+                    if event.button == 1: is_dragging = False
+                elif event.type == pygame.MOUSEMOTION:
+                    if active_menu:
+                        logical_pos = (event.pos[0] / current_scale, event.pos[1] / current_scale)
+                        active_menu.update_hover(logical_pos)
 
-    is_dragging = False
-    drag_start_global = (0, 0)
-    window_start_pos = (0, 0)
-    
-    next_blink = time.time() + random.uniform(2, 5)
-    blink_until = 0.0
-    current_hand_x, current_hand_y = 115, 297
-    is_talking, last_talk_time, mouth_open = False, 0.0, False
-    
-    current_expression = "normal"
-    expression_end_time = 0.0
-    active_menu = None
-    
-    is_click_through = False
-    toggle_click_through_flag = False
+            if toggle_click_through_flag:
+                toggle_click_through_flag = False
+                is_click_through = not is_click_through
+                set_click_through(is_click_through)
+                if is_click_through: active_menu = None
+                
+                msg = "穿透已开启" if is_click_through else "穿透已关闭"
+                floating_texts.append(FloatingText(msg, BASE_WIDTH//2, BASE_HEIGHT//2, 1.5))
 
-    def on_hotkey_press(key):
-        nonlocal toggle_click_through_flag
-        if key == keyboard.Key.f8:
-            toggle_click_through_flag = True
+            if is_dragging and not is_click_through:
+                dx = cur_x - drag_start_global[0]
+                dy = cur_y - drag_start_global[1]
+                move_window(window_start_pos[0] + dx, window_start_pos[1] + dy)
 
-    hotkey_listener = keyboard.Listener(on_press=on_hotkey_press)
-    hotkey_listener.daemon = True
-    hotkey_listener.start()
+            screen_w = win32api.GetSystemMetrics(0)
+            screen_h = win32api.GetSystemMetrics(1)
+            pct_x = (cur_x / screen_w) - 0.5
+            pct_y = (cur_y / screen_h) - 0.5
+            target_mx = 115 - (pct_x * 120)
+            target_my = 297 - (pct_y * 55)
+            target_mx = max(55, min(175, target_mx))
+            target_my = max(270, min(325, target_my))
+            current_hand_x += (target_mx - current_hand_x) * 0.2
+            current_hand_y += (target_my - current_hand_y) * 0.2
 
-    clock = pygame.time.Clock()
-    running = True
-    
-    was_singing = False # 用于检测唱歌状态变化
+            now = time.time()
+            if current_expression != "normal" and now > expression_end_time:
+                current_expression = "normal"
 
-    while running:
-        if reload_requested:
-            running = False
-            break
+            if now > next_blink:
+                blink_until = now + 0.15
+                next_blink = now + random.uniform(2, 5)
+            is_blinking = now < blink_until
 
-        try:
-            wx, wy = get_window_pos()
-            cur_x, cur_y = win32api.GetCursorPos()
-        except Exception:
+            is_typing, is_clicking = get_input_state()
+            active_chars = get_active_chars()
+            
+            update_singing_state(is_typing, is_clicking)
+            singing_status = get_is_singing()
+            
+            if singing_status and not was_singing:
+                plugin_mgr.trigger_event("sing_start")
+                was_singing = True
+            elif not singing_status and was_singing:
+                plugin_mgr.trigger_event("sing_stop")
+                was_singing = False
+
+            if MIC_ENABLED:
+                current_vol = get_volume()
+                dynamic_threshold = config.CFG["global"]["mic"]["threshold"]
+                
+                if is_typing or is_clicking:
+                    dynamic_threshold *= 2.0
+
+                if current_vol > dynamic_threshold:
+                    is_talking = True
+                    last_talk_time = now
+                if now - last_talk_time < config.CFG["global"]["mic"]["release_time"]:
+                    is_talking = True
+                    mouth_open = (int(now * config.CFG["global"]["mic"]["mouth_speed"]) % 2 == 0)
+                else:
+                    is_talking = False
+                    mouth_open = False
+
+            if is_typing and random.random() < 0.1:
+                particle_sys.emit(450, 300, count=1, color=(100, 200, 255), ptype="star")
+
+            canvas.fill((255, 0, 255))
+            draw_background_and_cat(
+                canvas, is_blinking, is_talking, is_typing, 
+                singing_status, mouth_open, char_images, show_code_face, current_expression
+            )
+            draw_mouse_hand(canvas, current_hand_x, current_hand_y, is_clicking)
+            draw_keyboard_hand(canvas, is_typing, active_chars, font)
+            particle_sys.update_and_draw(canvas)
+            
+            floating_texts = [t for t in floating_texts if t.update_and_draw(canvas, font)]
+            
+            if active_menu:
+                active_menu.draw(canvas, font)
+
+            if current_scale != 1.0:
+                if config.CFG["global"].get("performance_mode", False):
+                    scaled_canvas = pygame.transform.scale(canvas, (config.WIDTH, config.HEIGHT))
+                    screen.blit(scaled_canvas, (0, 0))
+                else:
+                    scaled_canvas = pygame.transform.smoothscale(canvas, (config.WIDTH, config.HEIGHT))
+                    remove_scale_artifacts(scaled_canvas)
+                    screen.blit(scaled_canvas, (0, 0))
+            else:
+                screen.blit(canvas, (0, 0))
+
             pygame.display.flip()
             clock.tick(FPS)
-            continue
 
-        current_scale = config.CFG["global"]["scale"]
-        
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                running = False
-            elif event.type == pygame.MOUSEBUTTONDOWN:
-                logical_pos = (event.pos[0] / current_scale, event.pos[1] / current_scale)
-                if event.button == 3 and not is_click_through:
-                    if active_menu: active_menu = None
-                    else:
-                        mx = min(logical_pos[0], BASE_WIDTH - 150)
-                        my = min(logical_pos[1], BASE_HEIGHT - 150)
-                        options = [("设置与互动", "settings"), ("重新加载桌宠", "reload"), ("退出程序", "quit")]
-                        screen_w = win32api.GetSystemMetrics(0)
-                        screen_h = win32api.GetSystemMetrics(1)
-                        active_menu = ContextMenu(mx, my, options, font, screen_w, screen_h, wx, wy)
-                elif event.button == 1:
-                    if active_menu:
-                        action = active_menu.check_click(logical_pos)
-                        if action:
-                            if action == "settings": open_settings()
-                            elif action == "reload": trigger_reload()
-                            elif action == "quit": running = False
-                        active_menu = None
-                    else:
-                        if not is_click_through:
-                            is_dragging = True
-                            try:
-                                drag_start_global = win32api.GetCursorPos()
-                                window_start_pos = get_window_pos()
-                            except Exception:
-                                is_dragging = False
-            elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 1: is_dragging = False
-            elif event.type == pygame.MOUSEMOTION:
-                if active_menu:
-                    logical_pos = (event.pos[0] / current_scale, event.pos[1] / current_scale)
-                    active_menu.update_hover(logical_pos)
+        # 内层循环结束（触发重载或退出）
+        # 清理本轮启动的音频和语音识别资源
+        print("\n[系统] 正在重置服务...")
+        stop_mic(mic_stream)
+        if stt: stt.stop()
+        time.sleep(0.5) # 给驱动一点回收时间
 
-        if toggle_click_through_flag:
-            toggle_click_through_flag = False
-            is_click_through = not is_click_through
-            set_click_through(is_click_through)
-            if is_click_through: active_menu = None
-            
-            msg = "穿透已开启" if is_click_through else "穿透已关闭"
-            floating_texts.append(FloatingText(msg, BASE_WIDTH//2, BASE_HEIGHT//2, 1.5))
-
-        if is_dragging and not is_click_through:
-            dx = cur_x - drag_start_global[0]
-            dy = cur_y - drag_start_global[1]
-            move_window(window_start_pos[0] + dx, window_start_pos[1] + dy)
-
-        screen_w = win32api.GetSystemMetrics(0)
-        screen_h = win32api.GetSystemMetrics(1)
-        pct_x = (cur_x / screen_w) - 0.5
-        pct_y = (cur_y / screen_h) - 0.5
-        target_mx = 115 - (pct_x * 120)
-        target_my = 297 - (pct_y * 55)
-        target_mx = max(55, min(175, target_mx))
-        target_my = max(270, min(325, target_my))
-        current_hand_x += (target_mx - current_hand_x) * 0.2
-        current_hand_y += (target_my - current_hand_y) * 0.2
-
-        now = time.time()
-        if current_expression != "normal" and now > expression_end_time:
-            current_expression = "normal"
-
-        if now > next_blink:
-            blink_until = now + 0.15
-            next_blink = now + random.uniform(2, 5)
-        is_blinking = now < blink_until
-
-        is_typing, is_clicking = get_input_state()
-        active_chars = get_active_chars()
-        
-        update_singing_state(is_typing, is_clicking)
-        singing_status = get_is_singing()
-        
-        # 广播唱歌状态事件
-        if singing_status and not was_singing:
-            plugin_mgr.trigger_event("sing_start")
-            was_singing = True
-        elif not singing_status and was_singing:
-            plugin_mgr.trigger_event("sing_stop")
-            was_singing = False
-
-        if MIC_ENABLED:
-            current_vol = get_volume()
-            dynamic_threshold = config.CFG["global"]["mic"]["threshold"]
-            
-            if is_typing or is_clicking:
-                dynamic_threshold *= 2.0
-
-            if current_vol > dynamic_threshold:
-                is_talking = True
-                last_talk_time = now
-            if now - last_talk_time < config.CFG["global"]["mic"]["release_time"]:
-                is_talking = True
-                mouth_open = (int(now * config.CFG["global"]["mic"]["mouth_speed"]) % 2 == 0)
-            else:
-                is_talking = False
-                mouth_open = False
-
-        if is_typing and random.random() < 0.1:
-            particle_sys.emit(450, 300, count=1, color=(100, 200, 255), ptype="star")
-
-        canvas.fill((255, 0, 255))
-        draw_background_and_cat(
-            canvas, is_blinking, is_talking, is_typing, 
-            singing_status, mouth_open, char_images, show_code_face, current_expression
-        )
-        draw_mouse_hand(canvas, current_hand_x, current_hand_y, is_clicking)
-        draw_keyboard_hand(canvas, is_typing, active_chars, font)
-        particle_sys.update_and_draw(canvas)
-        
-        floating_texts = [t for t in floating_texts if t.update_and_draw(canvas, font)]
-        
-        if active_menu:
-            active_menu.draw(canvas, font)
-
-        if current_scale != 1.0:
-            if config.CFG["global"].get("performance_mode", False):
-                scaled_canvas = pygame.transform.scale(canvas, (config.WIDTH, config.HEIGHT))
-                screen.blit(scaled_canvas, (0, 0))
-            else:
-                scaled_canvas = pygame.transform.smoothscale(canvas, (config.WIDTH, config.HEIGHT))
-                remove_scale_artifacts(scaled_canvas)
-                screen.blit(scaled_canvas, (0, 0))
-        else:
-            screen.blit(canvas, (0, 0))
-
-        pygame.display.flip()
-        clock.tick(FPS)
-
+    # 彻底退出
     stop_listeners()
-    stop_mic(mic_stream)
     hotkey_listener.stop()
-    if stt: stt.stop()
     pygame.quit()
-
-    if reload_requested:
-        print("\n[系统] 正在执行彻底重载...")
-        os.execl(sys.executable, sys.executable, *sys.argv)
 
 if __name__ == "__main__":
     main()

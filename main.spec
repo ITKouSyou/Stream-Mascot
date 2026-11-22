@@ -1,26 +1,45 @@
 # -*- mode: python ; coding: utf-8 -*-
-from PyInstaller.utils.hooks import collect_all, collect_data_files, collect_dynamic_libs
+import os
+import librosa
+from PyInstaller.utils.hooks import collect_all
 
-# ================= 收集 Vosk 及其 DLL =================
-# 强制收集 vosk 的数据、动态库和隐式导入
+# ================= 收集 Vosk =================
 vosk_datas, vosk_binaries, vosk_hiddenimports = collect_all('vosk')
 
-# ================= 收集 Pillow (PIL) 及其 C 扩展 =================
-# 强制收集 PIL 的所有数据、二进制 (包括 _imaging.pyd) 和隐藏导入
+# ================= 收集 Pillow =================
 pil_datas, pil_binaries, pil_hiddenimports = collect_all('PIL')
 
+# ================= 收集 librosa 依赖 =================
+librosa_datas, librosa_binaries, librosa_hiddenimports = collect_all('librosa')
+nr_datas, nr_binaries, nr_hiddenimports = collect_all('noisereduce')
+
+# ================= 🔧 核心修复：手动收集 librosa 的 .pyi 文件 =================
+librosa_pyi_datas = []
+librosa_dir = os.path.dirname(librosa.__file__)
+for root, dirs, files in os.walk(librosa_dir):
+    for f in files:
+        if f.endswith('.pyi'):
+            full_path = os.path.join(root, f)
+            # 计算相对于 librosa 包根目录的路径，并放入 _MEI.../librosa/ 下
+            rel_path = os.path.relpath(full_path, librosa_dir)
+            dest_dir = os.path.join('librosa', os.path.dirname(rel_path))
+            librosa_pyi_datas.append((full_path, dest_dir))
+
+# ================= 合并所有依赖 =================
 a = Analysis(
     ['main.py'],
     pathex=[],
-    binaries=vosk_binaries + pil_binaries, # 合并所有动态链接库
-    datas=vosk_datas + pil_datas,
-    hiddenimports=vosk_hiddenimports + pil_hiddenimports + [
+    binaries=vosk_binaries + pil_binaries + librosa_binaries + nr_binaries,
+    # 将手动收集的 .pyi 文件追加到 datas 中
+    datas=vosk_datas + pil_datas + librosa_datas + nr_datas + librosa_pyi_datas,
+    hiddenimports=vosk_hiddenimports + pil_hiddenimports + librosa_hiddenimports + nr_hiddenimports + [
         'tkinter', 
         'tkinter.ttk', 
         'tkinter.messagebox', 
         'tkinter.filedialog', 
         'tkinter.simpledialog',
-        'PIL._tkinter_finder'
+        'PIL._tkinter_finder',
+        'lazy_loader',  # 确保 lazy_loader 也被包含
     ],
     hookspath=[],
     hooksconfig={},
