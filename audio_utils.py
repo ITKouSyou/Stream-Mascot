@@ -2,7 +2,11 @@ import numpy as np
 import time
 import threading
 import config
+import warnings
 from config import CFG
+
+# 【新增】屏蔽底层降噪库的除零警告
+warnings.filterwarnings("ignore", message="invalid value encountered in divide", category=RuntimeWarning)
 
 try:
     import sounddevice as sd
@@ -207,11 +211,9 @@ def update_singing_state(is_typing, is_clicking):
         return
 
     now = time.time()
-    # 1. 节流限制（每 0.5 秒算一次）
     if now - _last_calc_time < 0.5: return
     _last_calc_time = now
     
-    # 2. 正在打字或点击时直接忽略，防止杂音
     if is_typing or is_clicking:
         with _state_lock:
             _sing_counter = max(_sing_counter - 1, 0)
@@ -230,6 +232,9 @@ def update_singing_state(is_typing, is_clicking):
             y = np.array(buf_copy, dtype=np.float32)
             if use_denoise:
                 y_denoised = nr.reduce_noise(y=y, sr=44100, stationary=False)
+                # 【新增】安全校验：如果降噪结果里包含 NaN，说明除零了，退回到原音频
+                if np.isnan(y_denoised).any():
+                    y_denoised = y
             else:
                 y_denoised = y
                 
@@ -258,7 +263,6 @@ def update_singing_state(is_typing, is_clicking):
         with _state_lock:
             _sing_counter = max(_sing_counter - 2, 0)
             
-    # 【核心修复】超时强制重置，防止状态卡死
     with _state_lock:
         if now - _last_sing_time > 1.5:
             _sing_counter = 0

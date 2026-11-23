@@ -56,7 +56,7 @@ def load_image_by_path(path, width=180):
                     ratio = width / surf.get_width()
                     target_height = int(surf.get_height() * ratio)
                     surf = pygame.transform.smoothscale(surf, (width, target_height))
-                    surf.set_colorkey(bg_color)   # 缩放后重新设
+                    surf.set_colorkey(bg_color)
                     frames.append(surf)
                     durations.append(frame.info.get("duration", 100) / 1000.0)
                 return GifPlayer(frames, durations)
@@ -82,16 +82,21 @@ def load_image_by_path(path, width=180):
         return None
 
 def draw_music_notes(surface, cx, cy, now):
+    """修复：调整了纵坐标，确保音符在可见区域内飘动"""
     for i in range(3):
         offset_x = math.sin(now * 5 + i) * 20
-        offset_y = (now * 40 + i * 40) % 100
-        alpha = max(0, 255 - offset_y * 2)
+        # 将飘动幅度减小，确保不会飞出屏幕
+        offset_y = (now * 30 + i * 30) % 60 
+        alpha = max(0, 255 - int(offset_y * 4))
+        
         if alpha > 0:
-            color = (255, 100, 150, int(alpha))
+            color = (255, 100, 150, alpha)
             temp = pygame.Surface((20, 20), pygame.SRCALPHA)
             pygame.draw.circle(temp, color, (5, 15), 5)
             pygame.draw.line(temp, color, (9, 12), (9, 0), 2)
             pygame.draw.arc(temp, color, (5, 0, 10, 10), 0, 3.14, 2)
+            
+            # cy - 60 是猫头顶开始的位置
             surface.blit(temp, (cx - 20 + offset_x + i*20, cy - 60 - offset_y))
 
 def draw_background_and_cat(surface, is_blinking, is_talking, is_typing, is_singing, mouth_open, char_images, show_code_face, expression="normal"):
@@ -164,16 +169,15 @@ def draw_background_and_cat(surface, is_blinking, is_talking, is_typing, is_sing
 
     if show_code_face:
         if is_singing:
-            # 唱歌时强制笑脸
-            exp_manager.draw(char_layer, base_cx, base_cy, False, True, True, expression)
-            mic_cx, mic_cy = base_cx + 30, base_cy + 25
-            pygame.draw.circle(char_layer, (60, 60, 60), (mic_cx, mic_cy), 10)
-            pygame.draw.line(char_layer, (120, 120, 120), (mic_cx, mic_cy + 10), (mic_cx - 10, mic_cy + 25), 4)
-            draw_music_notes(char_layer, base_cx, base_cy, now)
+            # 使用时间驱动，让唱歌时嘴巴一张一合 (每秒 8 次)
+            singing_mouth_open = (int(now * 8) % 2 == 0)
+            # 只画表情，不在这里画麦克风和音符
+            exp_manager.draw(char_layer, base_cx, base_cy, False, True, singing_mouth_open, expression)
         else:
             # 调用外部表情管理器
             exp_manager.draw(char_layer, base_cx, base_cy, is_blinking, is_talking, mouth_open, expression)
 
+    # 将旋转后的脸贴到主画面
     if angle != 0:
         rotated_layer = pygame.transform.rotate(char_layer, angle)
         rect = rotated_layer.get_rect(center=(draw_cx, draw_cy + 70))
@@ -181,6 +185,21 @@ def draw_background_and_cat(surface, is_blinking, is_talking, is_typing, is_sing
     else:
         rect = char_layer.get_rect(center=(draw_cx, draw_cy + 70))
         surface.blit(char_layer, rect)
+
+    # ================= 核心修复 =================
+    # 把麦克风和音符画在主 surface 上，绝对不受图层旋转和裁剪的影响
+    if is_singing and show_code_face:
+        # 1. 画麦克风 (微调了位置，往右下移了一点，不会挡嘴巴)
+        mic_cx = int(draw_cx + 40)
+        mic_cy = int(draw_cy + 35)  
+        
+        pygame.draw.circle(surface, (40, 40, 40), (mic_cx, mic_cy), 12) # 外框
+        pygame.draw.circle(surface, (100, 200, 255), (mic_cx, mic_cy), 8) # 亮蓝色的麦克风头
+        pygame.draw.line(surface, (150, 150, 150), (mic_cx, mic_cy + 10), (mic_cx - 10, mic_cy + 25), 5) # 麦克风把手
+        
+        # 2. 画音符 (传入猫脸的绝对中心坐标)
+        draw_music_notes(surface, int(draw_cx), int(draw_cy), now)
+    # ==========================================
 
     pygame.draw.rect(surface, COLOR_DESK, (0, 240, 600, 160))
     pygame.draw.line(surface, COLOR_OUTLINE, (0, 240), (600, 240), 4)
