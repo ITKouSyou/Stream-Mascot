@@ -7,3 +7,15 @@ vosk>=0.3.45
 Pillow>=10.0.0
 librosa>=0.10.0
 noisereduce>=3.0.0
+pystray>=0.19.5
+aiohttp>=3.9.0
+pure-protobuf>=3.1.2
+Brotli>=1.1.0
+brotlicffi>=1.2.0
+
+# blivedm 官方只发布在 GitHub，未发布到 PyPI
+# 注意：不要用普通 `pip install -r requirements.txt` 直接装它（会按 blivedm 的声明把 aiohttp 降级到 3.9.x）
+# 装依赖请固定使用下面两条命令：
+#   pip install -r requirements.txt
+#   pip install --no-deps git+https://github.com/xfgryujk/blivedm.git@master
+#blivedm @ git+https://github.com/xfgryujk/blivedm.git@master

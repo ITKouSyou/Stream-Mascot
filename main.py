@@ -23,6 +23,7 @@ from effects import ParticleSystem, ContextMenu, FloatingText
 from stt_utils import SpeechRecognizer
 from settings_ui import SettingsWindow
 from plugin_manager import PluginManager
+from tray_manager import TrayManager
 
 def remove_scale_artifacts(surface):
     arr = pygame.surfarray.pixels3d(surface)
@@ -44,7 +45,6 @@ def main():
     print(f"作者: ITKouSyou")
     print(f"GitHub: https://github.com/ITKouSyou/Stream-Mascot\n")
 
-    # --- 全局初始化 (只执行一次) ---
     pygame.init()
     pygame.font.init()
     
@@ -61,12 +61,10 @@ def main():
     set_window_transparent()
     canvas = pygame.Surface((BASE_WIDTH, BASE_HEIGHT))
 
-    # 全局监听器、快捷键、插件只启动一次
     start_listeners()
     
     plugin_mgr = PluginManager()
     def plugin_trigger_expression(emotion):
-        # 采用函数引用，因为 particle_sys 在循环里会变
         trigger_expression(emotion)
     
     def on_plugin_key_press(key_id):
@@ -82,13 +80,25 @@ def main():
     hotkey_listener.daemon = True
     hotkey_listener.start()
 
+    tray_exit_flag = False
+    
+    def tray_on_quit():
+        nonlocal tray_exit_flag
+        tray_exit_flag = True
+        global reload_requested
+        reload_requested = False
+
+    def tray_on_toggle_click():
+        nonlocal toggle_click_through_flag
+        toggle_click_through_flag = True
+
+    tray = None 
+
     # --- 重载外层循环 ---
-    first_run = True
-    while first_run or reload_requested:
-        first_run = False
+    is_first_run = True  # 用新变量替代 first_run
+    while is_first_run or reload_requested:
         reload_requested = False
         
-        # 每次重载时重新读取配置、加载资源、启动服务
         config.CFG = config.load_config()
         active_name = config.CFG["active_profile"]
         active_profile = config.CFG["profiles"].get(active_name, config.CFG["profiles"]["默认白猫"])
@@ -104,7 +114,6 @@ def main():
                 img = load_image_by_path(path)
                 if img: char_images[exp_name] = img
                 
-        # 重置外部状态
         particle_sys = ParticleSystem()
         floating_texts = []
         active_menu = None
@@ -122,7 +131,6 @@ def main():
         is_click_through = False
         was_singing = False
         
-        # 定义内部触发函数，绑定当前的 particle_sys
         def trigger_expression(emotion):
             nonlocal current_expression, expression_end_time
             current_expression = emotion
@@ -141,16 +149,17 @@ def main():
             else:
                 expression_end_time = 0
 
-        # 设置插件上下文
         plugin_mgr.set_context({
             "trigger_expression": lambda e: trigger_expression(e),
             "emit_particle": lambda x, y, count, color, ptype: particle_sys.emit(x, y, count, color, ptype),
             "emit_text": lambda text: floating_texts.append(FloatingText(text, BASE_WIDTH//2, BASE_HEIGHT//2, 1.5))
         })
-        if first_run:
+        
+        # 【核心修复】确保插件只加载一次，且能执行到
+        if is_first_run:
             plugin_mgr.load_plugins()
+            is_first_run = False
 
-        # 启动语音识别
         def on_speech_recognized(text):
             if get_is_singing():
                 return
@@ -163,11 +172,8 @@ def main():
                         plugin_mgr.trigger_event("voice_trigger", {"text": text, "emotion": emotion})
                         break
         stt = SpeechRecognizer(callback=on_speech_recognized)
-        
-        # 重启麦克风监听
         mic_stream = start_mic()
 
-        # 打开设置窗口的函数
         def open_settings():
             nonlocal active_menu
             active_menu = None
@@ -176,12 +182,20 @@ def main():
                 app.show()
             threading.Thread(target=run_ui, daemon=True).start()
 
+        if tray is None:
+            tray = TrayManager(
+                on_settings=open_settings,
+                on_reload=trigger_reload,
+                on_quit=tray_on_quit,
+                on_toggle_click_through=tray_on_toggle_click
+            )
+            tray.start()
+
         clock = pygame.time.Clock()
         running = True
         
-        # --- 内层主循环 (渲染与交互) ---
         while running:
-            if reload_requested:
+            if reload_requested or tray_exit_flag:
                 running = False
                 break
 
@@ -198,10 +212,12 @@ def main():
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
                     running = False
-                    reload_requested = False # 用户主动关闭，不重载
+                    reload_requested = False 
+                    tray_exit_flag = True
                 elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
                     running = False
                     reload_requested = False
+                    tray_exit_flag = True
                 elif event.type == pygame.MOUSEBUTTONDOWN:
                     logical_pos = (event.pos[0] / current_scale, event.pos[1] / current_scale)
                     if event.button == 3 and not is_click_through:
@@ -222,6 +238,7 @@ def main():
                                 elif action == "quit": 
                                     running = False
                                     reload_requested = False
+                                    tray_exit_flag = True
                             active_menu = None
                         else:
                             if not is_click_through:
@@ -333,14 +350,12 @@ def main():
             pygame.display.flip()
             clock.tick(FPS)
 
-        # 内层循环结束（触发重载或退出）
-        # 清理本轮启动的音频和语音识别资源
         print("\n[系统] 正在重置服务...")
         stop_mic(mic_stream)
         if stt: stt.stop()
-        time.sleep(0.5) # 给驱动一点回收时间
+        time.sleep(0.5)
 
-    # 彻底退出
+    if tray: tray.stop()
     stop_listeners()
     hotkey_listener.stop()
     pygame.quit()

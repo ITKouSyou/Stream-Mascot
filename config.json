@@ -164,6 +164,7 @@
     "always_on_top": true,
     "singing_sensitivity": 33.0,
     "performance_mode": false,
+    "bilibili_room_id": "21423607",
     "mic": {
       "enabled": true,
       "device_id": -1,

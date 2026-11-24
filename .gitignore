@@ -47,9 +47,9 @@ model/*
 # ---- 插件本地私有库 ----
 # 如果你想把自己写的插件提交到仓库，请删除下面这行
 # 如果你只想保留示例插件，请保留这行
-plugins/*
-!plugins/demo_chat.py
-!plugins/__init__.py
+# plugins/*
+# !plugins/demo_chat.py
+# !plugins/__init__.py
 
 # ---- 缓存 / 测试 ----
 .pytest_cache/

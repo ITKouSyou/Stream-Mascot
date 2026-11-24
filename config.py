@@ -2,7 +2,7 @@ import os
 import json
 import copy
 
-__version__ = "1.2.0"
+__version__ = "1.4.0"
 CONFIG_FILE = "config.json"
 CUSTOM_DIR = "custom_assets"
 
@@ -35,7 +35,8 @@ DEFAULT_CONFIG = {
         "fps": 60,
         "always_on_top": True,
         "singing_sensitivity": 50.0,
-        "performance_mode": False,  # 性能模式：不使用平滑缩放，大幅降低 CPU
+        "performance_mode": False,
+        "bilibili_room_id": "", # 【新增】B站直播间房间号
         "mic": {
             "enabled": True,
             "device_id": -1,
@@ -54,7 +55,6 @@ DEFAULT_CONFIG = {
 }
 
 def deep_merge(default, user):
-    """深度合并配置字典，防止用户误删字段导致崩溃"""
     if not isinstance(user, dict) or not isinstance(default, dict):
         return user if user is not None else default
     result = copy.deepcopy(default)
@@ -70,7 +70,6 @@ def load_config():
         try:
             with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                 user_cfg = json.load(f)
-            # 深度合并，自动补齐缺失字段
             cfg = deep_merge(DEFAULT_CONFIG, user_cfg)
             return cfg
         except Exception as e:

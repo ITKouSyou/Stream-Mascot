@@ -145,6 +145,26 @@ class SettingsWindow:
         self.var_performance = tk.BooleanVar(value=global_cfg.get("performance_mode", False))
         ttk.Checkbutton(frame, text="开启性能模式 (降低画质避免卡顿，适合配置较低的电脑)", variable=self.var_performance).pack(anchor=tk.W, pady=(5, 0))
 
+        # 【新增】B站弹幕配置
+        ttk.Label(frame, text="B站直播间房间号", style='Title.TLabel').pack(anchor=tk.W, pady=(15, 5))
+        
+        bili_tip = "解释：填入你的直播间【房间号】（纯数字）。注意：不是你的 B 站个人 UID！\n如何获取：前往你的直播间主页，浏览器地址栏 live.bilibili.com/ 后面的那串数字就是房间号。"
+        ttk.Label(frame, text=bili_tip, foreground="#ff9800", wraplength=580).pack(anchor=tk.W)
+        
+        self.var_bili_room = tk.StringVar(value=str(global_cfg.get("bilibili_room_id", "")))
+        bili_frame = tk.Frame(frame, bg="#2b2b2b")
+        bili_frame.pack(anchor=tk.W, pady=5)
+        
+        tk.Entry(bili_frame, textvariable=self.var_bili_room, bg="#1e1e1e", fg="white", insertbackground="white", width=20).pack(side=tk.LEFT)
+        
+        # 增加一个点击跳转的链接
+        def open_bili_live():
+            webbrowser.open_new("https://link.bilibili.com/p/center/index")
+            
+        bili_link = tk.Label(bili_frame, text="👉 前往直播中心", bg="#2b2b2b", fg="#4b6eaf", cursor="hand2", font=('微软雅黑', 9, 'underline'))
+        bili_link.pack(side=tk.LEFT, padx=10)
+        bili_link.bind("<Button-1>", lambda e: open_bili_live())
+        
         ttk.Label(frame, text="音频输入设备", style='Title.TLabel').pack(anchor=tk.W, pady=(15, 5))
         ttk.Label(frame, text="解释：如果系统自动切换失效，可以在这里手动锁定你的麦克风。", wraplength=600).pack(anchor=tk.W)
         
@@ -166,7 +186,6 @@ class SettingsWindow:
         self.device_combo = ttk.Combobox(dev_frame, textvariable=self.var_device, values=device_names, state="readonly", width=50)
         self.device_combo.pack(side=tk.LEFT, padx=(0, 10))
         
-        # 刷新设备按钮
         tk.Button(dev_frame, text="刷新设备", command=self.refresh_devices, bg="#4b6eaf", fg="white", relief="flat").pack(side=tk.LEFT)
 
         self.var_denoise = tk.BooleanVar(value=global_cfg["mic"].get("denoise", True))
@@ -374,6 +393,8 @@ class SettingsWindow:
         self.cfg["global"]["always_on_top"] = self.var_always_on_top.get()
         self.cfg["global"]["performance_mode"] = self.var_performance.get()
         self.cfg["global"]["singing_sensitivity"] = round(self.var_singing_sens.get(), 1)
+        self.cfg["global"]["bilibili_room_id"] = self.var_bili_room.get().strip()  # 【新增】保存 B站房间号
+        
         self.cfg["global"]["mic"]["enabled"] = self.var_mic_enabled.get()
         self.cfg["global"]["mic"]["threshold"] = round(self.var_mic_threshold.get(), 2)
         self.cfg["global"]["mic"]["denoise"] = self.var_denoise.get()
